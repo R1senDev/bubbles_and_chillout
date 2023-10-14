@@ -2,7 +2,6 @@ from pyglet.window import key
 from webbrowser    import open as open_url
 from minilogger    import Console
 from threading     import Thread
-from itertools     import cycle
 from random        import randint, choice
 from time          import time, sleep
 from json          import load
@@ -19,11 +18,17 @@ window = pyglet.window.Window(fullscreen=True, screen=screen[0])
 window.set_mouse_visible(False)
 
 # Loading images
-cursor_img = pyglet.image.load('resources/sprites/cursor.png')
-cursor = pyglet.sprite.Sprite(cursor_img)
 bubble_img = pyglet.image.load('resources/sprites/bubble.png')
-settings_img = pyglet.image.load('resources/sprites/settings.png')
+cursor_img = pyglet.image.load('resources/sprites/cursor.png')
 github_img = pyglet.image.load('resources/sprites/github.png')
+settings_img = pyglet.image.load('resources/sprites/settings.png')
+shuffle_img = pyglet.image.load('resources/sprites/shuffle.png')
+cross_img = pyglet.image.load('resources/sprites/cross.png')
+disabled_img = pyglet.image.load('resources/sprites/disabled.png')
+enabled_img = pyglet.image.load('resources/sprites/enabled.png')
+
+# Creating sprites from images
+cursor = pyglet.sprite.Sprite(cursor_img)
 
 # Creating drawing batches
 settings_batch = pyglet.graphics.Batch()
@@ -32,7 +37,6 @@ ui_batch = pyglet.graphics.Batch()
 # Loading music
 with open('resources/music_meta.json', 'r') as file: music_meta = load(file)
 music = []
-music_index = 0
 for fname in listdir('resources/music/'):
 	if fname not in music_meta:
 		Console.log(f'"resources/music/{fname}" has no accompanying entry in music_meta; skipping', 'ResourceLoader', 'W')
@@ -43,9 +47,22 @@ for fname in listdir('resources/music/'):
 	})
 
 # Looped playlist generator
+shuffle_playlist = True
+selected_track = 0
 def media_player_controller():
-	for media in cycle(music):
-		yield media['media']
+	global selected_track
+
+	while True:
+		if shuffle_playlist:
+			next_track = randint(0, len(music) - 1)
+			while next_track == selected_track:
+				next_track = randint(0, len(music) - 1)
+			selected_track = next_track
+		else:
+			selected_track += 1
+			if selected_track == len(music):
+				selected_track = 0
+		yield music[selected_track]['media']
 
 # Initializing the media player
 media_player = pyglet.media.Player()
@@ -85,10 +102,7 @@ def show_song_info():
 # Media player on_player_next_source event handler
 @media_player.event
 def on_player_next_source():
-	global music_index
-	music_index += 1
-	if music_index == len(music): music_index = 0
-	song_name.text = f'Song: {music[music_index]["name"]}'
+	song_name.text = f'Song: {music[selected_track]["name"]}'
 	thr = Thread(target=show_song_info, args=())
 	thr.start()
 
@@ -107,6 +121,11 @@ ui_shown = True
 def toggle_ui():
 	global ui_shown
 	ui_shown = not ui_shown
+
+# Enables/Disables playlist shuffling
+def toggle_shuffle():
+	global shuffle_playlist
+	shuffle_playlist = not shuffle_playlist
 
 bubbles = []
 
@@ -148,24 +167,39 @@ class Effector:
 
 # Button class
 class Button:
-	def __init__(self, x: int, y: int, w: int, h: int, texture, on_click = lambda: ...) -> None:
+	def __init__(self, x: int, y: int, w: int, h: int, texture, on_click = lambda: ..., two_states: bool = False) -> None:
 		self.x = x
 		self.y = y
 		self.w = w
 		self.h = h
 		self.sprite = pyglet.sprite.Sprite(texture, batch = ui_batch, x = x, y = y)
 		self.on_click = on_click
+		self.two_states = two_states
+		if self.two_states:
+			self.state = True
+			self.cross = pyglet.sprite.Sprite(disabled_img, x = self.x + self.w - 15, y = -15, batch = ui_batch)
+			self.tick = pyglet.sprite.Sprite(enabled_img, x = self.x + self.w - 15, y = self.y, batch = ui_batch)
 	
 	def click(self, x: int, y: int) -> bool:
-		if x > self.x and x < self.x + self.w and y > self.y and y < self.y + self.h:
+		if x > self.x and x < self.x + self.w and y > self.y and y < self.y + self.h and ui_shown:
 			self.on_click()
+			if self.two_states:
+				self.state = not self.state
+				if self.state:
+					self.cross.y = -15
+					self.tick.y = self.y
+				else:
+					self.cross.y = self.y
+					self.tick.y = -15
 			return True
 		return False
 
 # Creating UI buttons (settings, GitHub)
 buttons = [
-	#Button(10, 10, 50, 50, settings_img, toggle_settings),
-	Button(10, 10, 50, 50, github_img, open_github)
+	Button(10, 10, 50, 50, github_img, open_github, False),
+	#Button(10, 10, 50, 50, settings_img, toggle_settings, False),
+	Button(70, 10, 50, 50, shuffle_img, toggle_shuffle, True),
+	Button(window.width - 40, window.height - 40, 30, 30, cross_img, pyglet.app.event_loop.exit, False),
 ]
 
 # Bubble class
@@ -238,7 +272,8 @@ def on_mouse_press(x, y, button, modifiers):
 	global bubbles
 
 	for btn in buttons:
-		btn.click(x, y)
+		if btn.click(x, y):
+			return None
 
 	for i, obj in enumerate(bubbles):
 		if x > obj.x and x < obj.x + obj.size and y > obj.y and y < obj.y + obj.size:
@@ -298,11 +333,12 @@ def spawner():
 thr = Thread(target=spawner, args=())
 thr.start()
 
-# Starting the Pyglet app
-pyglet.app.run()
-
 # Starting the music
 media_player.play()
+on_player_next_source()
+
+# Starting the Pyglet app
+pyglet.app.run()
 
 # Waiting for event_loop to stop, then delete media_player
 while pyglet.app.event_loop.is_running:
