@@ -4,7 +4,7 @@ from minilogger    import Console
 from threading     import Thread
 from random        import randint, choice
 from time          import time, sleep
-from json          import load
+from json          import load, dump
 from math          import sin
 from os            import listdir
 
@@ -17,15 +17,23 @@ screen = pyglet.canvas.get_display().get_screens()
 window = pyglet.window.Window(fullscreen=True, screen=screen[0])
 window.set_mouse_visible(False)
 
+# Loading localization strings
+with open('resources/localization.json', 'r', encoding = 'utf-8') as file: locales = load(file)
+# Loading user settings
+with open('data/settings.json', 'r') as file: settings = load(file)
+
 # Loading images
-bubble_img = pyglet.image.load('resources/sprites/bubble.png')
-cursor_img = pyglet.image.load('resources/sprites/cursor.png')
-github_img = pyglet.image.load('resources/sprites/github.png')
+bubble_img   = pyglet.image.load('resources/sprites/bubble.png')
+cursor_img   = pyglet.image.load('resources/sprites/cursor.png')
+github_img   = pyglet.image.load('resources/sprites/github.png')
 settings_img = pyglet.image.load('resources/sprites/settings.png')
-shuffle_img = pyglet.image.load('resources/sprites/shuffle.png')
-cross_img = pyglet.image.load('resources/sprites/cross.png')
+shuffle_img  = pyglet.image.load('resources/sprites/shuffle.png')
+show_img     = pyglet.image.load('resources/sprites/show.png')
+hide_img     = pyglet.image.load('resources/sprites/hide.png')
+cross_img    = pyglet.image.load('resources/sprites/cross.png')
 disabled_img = pyglet.image.load('resources/sprites/disabled.png')
-enabled_img = pyglet.image.load('resources/sprites/enabled.png')
+enabled_img  = pyglet.image.load('resources/sprites/enabled.png')
+globe_img    = pyglet.image.load('resources/sprites/globe.png')
 
 # Creating sprites from images
 cursor = pyglet.sprite.Sprite(cursor_img)
@@ -47,7 +55,7 @@ for fname in listdir('resources/music/'):
 	})
 
 # Looped playlist generator
-shuffle_playlist = True
+shuffle_playlist = settings['shuffle']
 selected_track = 0
 def media_player_controller():
 	global selected_track
@@ -68,9 +76,22 @@ def media_player_controller():
 media_player = pyglet.media.Player()
 media_player.queue(media_player_controller())
 
+locales_list = list(locales.keys())
+locale = settings['locale']
+def change_language():
+	global locale
+	locale += 1
+	if locale == len(locales_list):
+		locale = 0
+
+	song_name.text = f'{locales[locales_list[locale]]["song"]}: {music[0]["name"]}'
+	song_hint.text = locales[locales_list[locale]]['to_skip'].format('+'.join(['Ctrl', 'N']))
+	locale_label.text = f'{locales[locales_list[locale]]["self_name"]} ({locales[locales_list[locale]]["en_name"]})'
+	restore_ui_hint.text = locales[locales_list[locale]]['restore_ui_hint'].format('+'.join(['F1']))
+
 # Pop-up with the track name
 song_name = pyglet.text.Label(
-	text      = f'Song: {music[0]["name"]}',
+	text      = f'{locales[locales_list[locale]]["song"]}: {music[0]["name"]}',
 	font_name = 'Arial',
 	font_size = 50,
 	bold      = True,
@@ -81,7 +102,7 @@ song_name = pyglet.text.Label(
 	anchor_x  = 'right'
 )
 song_hint = pyglet.text.Label(
-	text      = '[Ctrl+N] to skip',
+	text      = locales[locales_list[locale]]['to_skip'].format('+'.join(['Ctrl', 'N'])),
 	font_name = 'Arial',
 	font_size = 17,
 	italic    = True,
@@ -89,6 +110,28 @@ song_hint = pyglet.text.Label(
 	x         = window.width - 10,
 	y         = 20,
 	anchor_x  = 'right'
+)
+
+locale_label = pyglet.text.Label(
+	text      = f'{locales[locales_list[locale]]["self_name"]} ({locales[locales_list[locale]]["en_name"]})',
+	font_name = 'Arial',
+	font_size = 20,
+	color     = (255, 255, 255, 100),
+	x         = 70,
+	y         = 35,
+	anchor_y  = 'center',
+	batch     = settings_batch
+)
+
+restore_ui_hint = pyglet.text.Label(
+	text      = locales[locales_list[locale]]['restore_ui_hint'].format('+'.join(['F1'])),
+	font_name = 'Arial',
+	font_size = 20,
+	italic    = True,
+	color     = (255, 255, 255, 75),
+	x         = 10,
+	y         = window.height - 10,
+	anchor_y  = 'top',
 )
 
 # A function that makes the track name visible for 5 seconds. Blocking (requires a dedicated thread for OpenGL to work).
@@ -102,30 +145,57 @@ def show_song_info():
 # Media player on_player_next_source event handler
 @media_player.event
 def on_player_next_source():
-	song_name.text = f'Song: {music[selected_track]["name"]}'
+	song_name.text = f'{locales[locales_list[locale]]["song"]}: {music[selected_track]["name"]}'
 	thr = Thread(target=show_song_info, args=())
 	thr.start()
-
-# Shows/Hides the settings section. Currently in development.
-settings_shown = False
-def toggle_settings():
-	global settings_shown
-	settings_shown = not settings_shown
 
 # Opens the project page on GitHub in the browser
 def open_github():
 	open_url('https://github.com/R1senDev/bubbles_and_chillout')
 
-# Shows/Hides the UI.
+# Shows/Hides the settings section
+settings_shown = False
+def toggle_settings():
+	global settings_shown
+	settings_shown = not settings_shown
+
+	for btn in buttons:
+		if 'main_row' in btn.classes:
+			btn.set_y(70 if settings_shown else 10)
+		elif 'settings' in btn.classes:
+			btn.set_y(10 if settings_shown else -50)
+
+restore_ui_hint_shown = False
+restore_ui_hint_already_shown = False
+def restore_ui_hint_controller():
+	global restore_ui_hint_shown
+	restore_ui_hint_shown = True
+	end_time = time() + 10
+	while time() < end_time and not ui_shown:
+		sleep(0.02)
+	restore_ui_hint_shown = False
+
+# Shows/Hides the UI
 ui_shown = True
 def toggle_ui():
 	global ui_shown
+	global restore_ui_hint_already_shown
 	ui_shown = not ui_shown
+	if settings_shown:
+		toggle_settings()
+	if not restore_ui_hint_already_shown:
+		restore_ui_hint_already_shown = True
+		thr = Thread(target = restore_ui_hint_controller, args = ())
+		thr.start()
 
 # Enables/Disables playlist shuffling
 def toggle_shuffle():
 	global shuffle_playlist
 	shuffle_playlist = not shuffle_playlist
+
+def close_app():
+	on_close()
+	window.close()
 
 bubbles = []
 
@@ -167,7 +237,7 @@ class Effector:
 
 # Button class
 class Button:
-	def __init__(self, x: int, y: int, w: int, h: int, texture, on_click = lambda: ..., two_states: bool = False) -> None:
+	def __init__(self, x: int, y: int, w: int, h: int, texture, on_click = lambda: ..., two_states: bool = False, classes: list[str] = []) -> None:
 		self.x = x
 		self.y = y
 		self.w = w
@@ -175,11 +245,24 @@ class Button:
 		self.sprite = pyglet.sprite.Sprite(texture, batch = ui_batch, x = x, y = y)
 		self.on_click = on_click
 		self.two_states = two_states
+		self.classes = classes
 		if self.two_states:
 			self.state = True
 			self.cross = pyglet.sprite.Sprite(disabled_img, x = self.x + self.w - 15, y = -15, batch = ui_batch)
 			self.tick = pyglet.sprite.Sprite(enabled_img, x = self.x + self.w - 15, y = self.y, batch = ui_batch)
 	
+	def set_y(self, y: int):
+		self.y = y
+		self.sprite.y = y
+		if not self.two_states:
+			return None
+		if self.state:
+			self.cross.y = -15
+			self.tick.y = y
+		else:
+			self.cross.y = y
+			self.tick.y = -15
+
 	def click(self, x: int, y: int) -> bool:
 		if x > self.x and x < self.x + self.w and y > self.y and y < self.y + self.h and ui_shown:
 			self.on_click()
@@ -196,11 +279,21 @@ class Button:
 
 # Creating UI buttons (settings, GitHub)
 buttons = [
-	Button(10, 10, 50, 50, github_img, open_github, False),
-	#Button(10, 10, 50, 50, settings_img, toggle_settings, False),
-	Button(70, 10, 50, 50, shuffle_img, toggle_shuffle, True),
-	Button(window.width - 40, window.height - 40, 30, 30, cross_img, pyglet.app.event_loop.exit, False),
+	Button(10, 10, 50, 50, github_img, open_github, False, ['main_row']),
+	Button(70, 10, 50, 50, settings_img, toggle_settings, False, ['main_row']),
+	Button(130, 10, 50, 50, shuffle_img, toggle_shuffle, True, ['main_row']),
+
+	Button(10, -50, 50, 50, globe_img, change_language, False, ['settings']),
+
+	Button(10, window.height - 60, 50, 50, hide_img, toggle_ui, False, []),
+
+	Button(window.width - 40, window.height - 40, 30, 30, cross_img, close_app, False, ['window_controls']),
 ]
+
+if not shuffle_playlist:
+	buttons[2].state = False
+	buttons[2].cross.y = buttons[2].y
+	buttons[2].tick.y = -15
 
 # Bubble class
 class Bubble:
@@ -248,6 +341,9 @@ def on_draw():
 		if bubbles[i].y < window.height + bubbles[i].size:
 			bubbles[i].draw()
 	
+	if restore_ui_hint_shown:
+		restore_ui_hint.draw()
+
 	# Draw the UI if it is not hidden
 	if ui_shown:
 		ui_batch.draw()
@@ -296,18 +392,39 @@ def on_mouse_drag(x, y, dx, dy, buttons, modifiers):
 @window.event
 def on_key_press(symbol, modifiers):
 	match symbol:
+
 		case key.ESCAPE:
+			if settings_shown:
+				toggle_settings()
 			return pyglet.event.EVENT_HANDLED
+		
 		case key.F1:
 			toggle_ui()
+			return pyglet.event.EVENT_HANDLED
+		
 		case key.N:
 			if modifiers & key.MOD_CTRL:
 				media_player.next_source()
+				return pyglet.event.EVENT_HANDLED
+			
 		case key.SPACE:
 			if media_player.playing:
 				media_player.pause()
+				return pyglet.event.EVENT_HANDLED
+			
 			else:
 				media_player.play()
+				return pyglet.event.EVENT_HANDLED
+
+@window.event
+def on_close():
+	Console.log('window was closed', 'IntentHandler', 'I')
+	Console.log('collecting app data to settings', 'IntentHandler', 'I')
+	settings['locale'] = locale
+	settings['shuffle'] = shuffle_playlist
+	Console.log('dumping settings -> data/settings.json', 'IntentHandler', 'I')
+	with open('data/settings.json', 'w') as file: dump(settings, file, indent = 4)
+	Console.log('exitting', 'IntentHandler', 'I')
 
 # A function that creates random bubbles with a random delay. Blocking.
 def spawner():
