@@ -42,6 +42,9 @@ level1_img                  = pyglet.image.load('resources/sprites/level_low.png
 level2_img                  = pyglet.image.load('resources/sprites/level_medium.png')
 level3_img                  = pyglet.image.load('resources/sprites/level_high.png')
 
+weighted_companion_cube_img.anchor_x = weighted_companion_cube_img.width // 2
+weighted_companion_cube_img.anchor_y = weighted_companion_cube_img.height // 2
+
 # Creating sprites from images
 cursor = pyglet.sprite.Sprite(cursor_img)
 
@@ -380,15 +383,17 @@ if not shuffle_playlist:
 # Bubble class
 class Bubble:
 	raw_y = 0
-	size = 300
+	size = bubble_img.width
 	tried_to_update = False
+	common = True
 	sprite = pyglet.sprite.Sprite(bubble_img)
 
-	def __init__(self, x_origin: int, amplitude: float = 150, frequency: float = 0.025, speed: float = 40, function = sin) -> None:
+	def __init__(self, x_origin: int, amplitude: float = 150, frequency: float = 0.025, x_shift: int = 0, speed: float = 40, function = sin) -> None:
 		self.start_time = time()
 		self.x_origin = x_origin
 		self.amplitude = amplitude
 		self.frequency = frequency
+		self.x_shift = x_shift
 		self.speed = speed
 		self.func = function
 
@@ -398,14 +403,17 @@ class Bubble:
 	
 	@property
 	def x(self) -> int:
-		return int(self.func(self.y * self.frequency) * self.amplitude) + self.x_origin
+		return int(self.func(self.y * self.frequency) * self.amplitude) + (self.x_shift * self.y) + self.x_origin
 	
 	def update_y(self) -> None:
 		if not self.tried_to_update:
-			if random() <= 0.001:
+			if random() <= 0.1:
 				self.sprite = pyglet.sprite.Sprite(weighted_companion_cube_img)
+				self.common = False
 			self.tried_to_update = True
-		self.raw_y = (time() - self.start_time) * self.speed - 300
+		if not self.common:
+			self.sprite.rotation += 0.1
+		self.raw_y = (time() - self.start_time) * self.speed - bubble_img.width
 	
 	def pop(self):
 		self.sprite.y = window.height + self.size
@@ -428,6 +436,7 @@ def on_draw():
 		bubbles[i].update_y()
 		if bubbles[i].y < window.height + bubbles[i].size:
 			bubbles[i].draw()
+			#pyglet.shapes.Line(0, 0, bubbles[i].x, bubbles[i].y, 2, (255, 0, 0)).draw()
 	
 	if restore_ui_hint_shown:
 		restore_ui_hint.draw()
@@ -459,10 +468,16 @@ def on_mouse_press(x, y, button, modifiers):
 			return None
 
 	for i, obj in enumerate(bubbles):
-		if x > obj.x and x < obj.x + obj.size and y > obj.y and y < obj.y + obj.size:
-			obj.pop()
-			bubbles.pop(i)
-			return None
+		if obj.common:
+			if x > obj.x and x < obj.x + obj.size and y > obj.y and y < obj.y + obj.size:
+				obj.pop()
+				bubbles.pop(i)
+				return None
+		else:
+			if x > obj.x - (weighted_companion_cube_img.width // 2) and x < obj.x - (weighted_companion_cube_img.width // 2) + obj.size and y > obj.y - (weighted_companion_cube_img.width // 2) and y < obj.y - (weighted_companion_cube_img.width // 2) + obj.size:
+				obj.pop()
+				bubbles.pop(i)
+				return None
 
 # Handler for the mouse button motion event
 @window.event
@@ -526,9 +541,10 @@ def spawner():
 		sleep(delay)
 		bubbles.reverse()
 		bubbles.append(Bubble(
-			x_origin  = randint(0, window.width - 300),
+			x_origin  = randint(0, window.width - bubble_img.width),
 			speed     = randint(30, 60),
-			frequency = randint(15, 25) / 1000
+			frequency = randint(15, 25) / 1000,
+			x_shift   = random() * 2 - 1
 		))
 		bubbles.reverse()
 	Console.log('event_loop is inactive; ending', 'Spawner', 'I')
