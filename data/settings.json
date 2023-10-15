@@ -1,4 +1,5 @@
 {
     "locale": 0,
-    "shuffle": true
+    "shuffle": true,
+    "shake_level": 1
 }

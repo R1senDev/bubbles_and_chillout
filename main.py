@@ -2,7 +2,7 @@ from pyglet.window import key
 from webbrowser    import open as open_url
 from minilogger    import Console
 from threading     import Thread
-from random        import randint, choice
+from random        import random, randint, choice
 from time          import time, sleep
 from json          import load, dump
 from math          import sin
@@ -23,17 +23,24 @@ with open('resources/localization.json', 'r', encoding = 'utf-8') as file: local
 with open('data/settings.json', 'r') as file: settings = load(file)
 
 # Loading images
-bubble_img   = pyglet.image.load('resources/sprites/bubble.png')
-cursor_img   = pyglet.image.load('resources/sprites/cursor.png')
-github_img   = pyglet.image.load('resources/sprites/github.png')
-settings_img = pyglet.image.load('resources/sprites/settings.png')
-shuffle_img  = pyglet.image.load('resources/sprites/shuffle.png')
-show_img     = pyglet.image.load('resources/sprites/show.png')
-hide_img     = pyglet.image.load('resources/sprites/hide.png')
-cross_img    = pyglet.image.load('resources/sprites/cross.png')
-disabled_img = pyglet.image.load('resources/sprites/disabled.png')
-enabled_img  = pyglet.image.load('resources/sprites/enabled.png')
-globe_img    = pyglet.image.load('resources/sprites/globe.png')
+bubble_img                  = pyglet.image.load('resources/sprites/bubble.png')
+weighted_companion_cube_img = pyglet.image.load('resources/sprites/weighted_companion_cube.png')
+cursor_img                  = pyglet.image.load('resources/sprites/cursor.png')
+github_img                  = pyglet.image.load('resources/sprites/github.png')
+settings_img                = pyglet.image.load('resources/sprites/settings.png')
+shuffle_img                 = pyglet.image.load('resources/sprites/shuffle.png')
+play_pause_img              = pyglet.image.load('resources/sprites/play_pause.png')
+show_img                    = pyglet.image.load('resources/sprites/show.png')
+hide_img                    = pyglet.image.load('resources/sprites/hide.png')
+cross_img                   = pyglet.image.load('resources/sprites/cross.png')
+disabled_img                = pyglet.image.load('resources/sprites/disabled.png')
+enabled_img                 = pyglet.image.load('resources/sprites/enabled.png')
+globe_img                   = pyglet.image.load('resources/sprites/globe.png')
+pulse_img                   = pyglet.image.load('resources/sprites/pulse.png')
+level0_img                  = pyglet.image.load('resources/sprites/level_off.png')
+level1_img                  = pyglet.image.load('resources/sprites/level_low.png')
+level2_img                  = pyglet.image.load('resources/sprites/level_medium.png')
+level3_img                  = pyglet.image.load('resources/sprites/level_high.png')
 
 # Creating sprites from images
 cursor = pyglet.sprite.Sprite(cursor_img)
@@ -118,7 +125,7 @@ locale_label = pyglet.text.Label(
 	font_size = 20,
 	color     = (255, 255, 255, 100),
 	x         = 70,
-	y         = 35,
+	y         = 95,
 	anchor_y  = 'center',
 	batch     = settings_batch
 )
@@ -161,9 +168,13 @@ def toggle_settings():
 
 	for btn in buttons:
 		if 'main_row' in btn.classes:
-			btn.set_y(70 if settings_shown else 10)
-		elif 'settings' in btn.classes:
-			btn.set_y(10 if settings_shown else -50)
+			btn.set_y(130 if settings_shown else 10)
+
+def toggle_playback():
+	if media_player.playing:
+		media_player.pause()
+	else:
+		media_player.play()
 
 restore_ui_hint_shown = False
 restore_ui_hint_already_shown = False
@@ -193,6 +204,15 @@ def toggle_shuffle():
 	global shuffle_playlist
 	shuffle_playlist = not shuffle_playlist
 
+shake_level = settings['shake_level']
+def change_shake_level():
+	global shake_level
+	shake_level += 1
+	if shake_level > 3:
+		shake_level = 0
+	shake_level_widget.level = shake_level
+	Effector.shake_widget(3 * shake_level, 3 * shake_level, 0.25)
+
 def close_app():
 	on_close()
 	window.close()
@@ -220,8 +240,12 @@ class Effector:
 			ys = list([i for i in range(-y_offset, y_offset + 1)])
 			xs.remove(render_offset.x)
 			ys.remove(render_offset.y)
-			render_offset.x = choice(xs)
-			render_offset.y = choice(ys)
+			if not (xs or ys):
+				Console.log('effect cannot be played: all of offsets == 0', 'Effector.shake', 'I')
+			if xs:
+				render_offset.x = choice(xs)
+			if ys:
+				render_offset.y = choice(ys)
 			if not pyglet.app.event_loop.is_running:
 				Console.log('event_loop is inactive; ending', 'Effector.shake', 'I')
 				return None
@@ -229,11 +253,65 @@ class Effector:
 		Console.log('ended', 'Effector.shake', 'D')
 		render_offset.x = 0
 		render_offset.y = 0
+	
+	def shake_widget_fx(x_offset: int, y_offset: int, end_time: float):
+		if not pyglet.app.event_loop.is_running:
+			Console.log('waiting until event_loop runs', 'Effector.shake_widget', 'I')
+			while not pyglet.app.event_loop.is_running:
+				sleep(0.2)
+			Console.log('met event_loop', 'Effector.shake_widget', 'I')
+		Console.log('started', 'Effector.shake_widget', 'D')
+		sx = shake_level_widget.sprites[0].x
+		sy = shake_level_widget.sprites[0].y
+		while time() < end_time:
+			xs = list([i + sx for i in range(-x_offset, x_offset + 1)])
+			ys = list([i + sy for i in range(-y_offset, y_offset + 1)])
+			xs.remove(shake_level_widget.sprites[0].x)
+			ys.remove(shake_level_widget.sprites[0].y)
+			if not (xs or ys):
+				Console.log('effect cannot be played: all of offsets == 0', 'Effector.shake_widget', 'I')
+				return None
+			if xs:
+				for sprite in shake_level_widget.sprites:
+					sprite.x = choice(xs)
+			if ys:
+				for sprite in shake_level_widget.sprites:
+					sprite.y = choice(ys)
+			if not pyglet.app.event_loop.is_running:
+				Console.log('event_loop is inactive; ending', 'Effector.shake_widget', 'I')
+				return None
+			sleep(0.01)
+		Console.log('ended', 'Effector.shake_widget', 'D')
+		for sprite in shake_level_widget.sprites:
+			sprite.x = sx
+			sprite.y = sy
 
 	@classmethod
 	def shake(self, x_offset: int = 3, y_offset: int = 3, fx_time: float = 1):
 		thr = Thread(target=self.shake_fx, args=[x_offset, y_offset, time() + fx_time])
 		thr.start()
+	
+	@classmethod
+	def shake_widget(self, x_offset: int = 3, y_offset: int = 3, fx_time: float = 1):
+		thr = Thread(target=self.shake_widget_fx, args=[x_offset, y_offset, time() + fx_time])
+		thr.start()
+
+class LevelWidget:
+	def __init__(self, x: int, y: int, level_sprites: list):
+		self.sprites = []
+		for img in level_sprites:
+			self.sprites.append(pyglet.sprite.Sprite(img, x, y))
+		self.level = shake_level
+	
+	def draw(self):
+		self.sprites[self.level].draw()
+
+shake_level_widget = LevelWidget(70, 20, [
+	level0_img,
+	level1_img,
+	level2_img,
+	level3_img
+])
 
 # Button class
 class Button:
@@ -242,7 +320,7 @@ class Button:
 		self.y = y
 		self.w = w
 		self.h = h
-		self.sprite = pyglet.sprite.Sprite(texture, batch = ui_batch, x = x, y = y)
+		self.sprite = pyglet.sprite.Sprite(texture, batch = settings_batch if 'settings' in classes else ui_batch, x = x, y = y)
 		self.on_click = on_click
 		self.two_states = two_states
 		self.classes = classes
@@ -264,6 +342,8 @@ class Button:
 			self.tick.y = -15
 
 	def click(self, x: int, y: int) -> bool:
+		if 'settings' in self.classes and not settings_shown:
+			return False
 		if x > self.x and x < self.x + self.w and y > self.y and y < self.y + self.h and ui_shown:
 			self.on_click()
 			if self.two_states:
@@ -282,8 +362,10 @@ buttons = [
 	Button(10, 10, 50, 50, github_img, open_github, False, ['main_row']),
 	Button(70, 10, 50, 50, settings_img, toggle_settings, False, ['main_row']),
 	Button(130, 10, 50, 50, shuffle_img, toggle_shuffle, True, ['main_row']),
+	Button(190, 10, 50, 50, play_pause_img, toggle_playback, False, ['main_row']),
 
-	Button(10, -50, 50, 50, globe_img, change_language, False, ['settings']),
+	Button(10, 70, 50, 50, globe_img, change_language, False, ['settings']),
+	Button(10, 10, 110, 50, pulse_img, change_shake_level, False, ['settings']),
 
 	Button(10, window.height - 60, 50, 50, hide_img, toggle_ui, False, []),
 
@@ -299,6 +381,7 @@ if not shuffle_playlist:
 class Bubble:
 	raw_y = 0
 	size = 300
+	tried_to_update = False
 	sprite = pyglet.sprite.Sprite(bubble_img)
 
 	def __init__(self, x_origin: int, amplitude: float = 150, frequency: float = 0.025, speed: float = 40, function = sin) -> None:
@@ -318,10 +401,15 @@ class Bubble:
 		return int(self.func(self.y * self.frequency) * self.amplitude) + self.x_origin
 	
 	def update_y(self) -> None:
+		if not self.tried_to_update:
+			if random() <= 0.001:
+				self.sprite = pyglet.sprite.Sprite(weighted_companion_cube_img)
+			self.tried_to_update = True
 		self.raw_y = (time() - self.start_time) * self.speed - 300
 	
 	def pop(self):
 		self.sprite.y = window.height + self.size
+		Effector.shake(2 * shake_level, 2 * shake_level, 0.1)
 	
 	def draw(self):
 		self.sprite.x = self.x + render_offset.x
@@ -351,6 +439,7 @@ def on_draw():
 	# Draw the settings if they are not hidden
 	if settings_shown:
 		settings_batch.draw()
+		shake_level_widget.draw()
 
 	# Draw song info if it should be displayed at the moment
 	if showing_song_info:
@@ -358,8 +447,6 @@ def on_draw():
 		song_hint.draw()
 	
 	# Draw the cursor
-	cursor.x += render_offset.x
-	cursor.y += render_offset.y
 	cursor.draw()
 
 # Handler for the mouse button press event
@@ -402,19 +489,18 @@ def on_key_press(symbol, modifiers):
 			toggle_ui()
 			return pyglet.event.EVENT_HANDLED
 		
+		case key.S:
+			if modifiers & key.MOD_CTRL:
+				buttons[2].click(buttons[2].x + 1, buttons[2].y + 1)
+
 		case key.N:
 			if modifiers & key.MOD_CTRL:
 				media_player.next_source()
 				return pyglet.event.EVENT_HANDLED
 			
 		case key.SPACE:
-			if media_player.playing:
-				media_player.pause()
-				return pyglet.event.EVENT_HANDLED
-			
-			else:
-				media_player.play()
-				return pyglet.event.EVENT_HANDLED
+			toggle_playback()
+			return pyglet.event.EVENT_HANDLED
 
 @window.event
 def on_close():
@@ -422,6 +508,7 @@ def on_close():
 	Console.log('collecting app data to settings', 'IntentHandler', 'I')
 	settings['locale'] = locale
 	settings['shuffle'] = shuffle_playlist
+	settings['shake_level'] = shake_level
 	Console.log('dumping settings -> data/settings.json', 'IntentHandler', 'I')
 	with open('data/settings.json', 'w') as file: dump(settings, file, indent = 4)
 	Console.log('exitting', 'IntentHandler', 'I')
