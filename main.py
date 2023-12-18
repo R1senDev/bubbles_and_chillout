@@ -245,6 +245,7 @@ class Effector:
 			ys.remove(render_offset.y)
 			if not (xs or ys):
 				Console.log('effect cannot be played: all of offsets == 0', 'Effector.shake', 'I')
+				return None
 			if xs:
 				render_offset.x = choice(xs)
 			if ys:
@@ -407,7 +408,7 @@ class Bubble:
 	
 	def update_y(self) -> None:
 		if not self.tried_to_update:
-			if random() <= 0.1:
+			if random() <= 0.001:
 				self.sprite = pyglet.sprite.Sprite(weighted_companion_cube_img)
 				self.common = False
 			self.tried_to_update = True
