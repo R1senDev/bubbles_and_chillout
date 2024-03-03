@@ -2,4 +2,8 @@
 __pycache__/
 
 *.log
-traceback.txt
+traceback.*
+
+*.dist/
+*.exe
+*.zip
