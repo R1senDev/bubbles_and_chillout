@@ -1,77 +1,107 @@
-from pyglet.window import key
-from webbrowser    import open as open_url
-from minilogger    import Console
-from threading     import Thread
-from random        import random, randint, choice
-from time          import time, sleep
-from json          import load, dump
-from math          import sin
-from os            import listdir
+from pyglet.graphics import Batch
+from pyglet.resource import media
+from pyglet.canvas   import get_display
+from pyglet.window   import key, Window
+from pyglet.shapes   import Rectangle
+from pyglet.sprite   import Sprite
+from pyglet.image    import load as load_image
+from pyglet.event    import EVENT_HANDLED
+from pyglet.media    import Player
+from pyglet.text     import Label
+from pyglet.app      import event_loop, run
 
-import pyglet
+from lib.settingsmgr import settings, save_settings
+from lib.minilogger  import Console
+
+from webbrowser      import open as open_url
+from traceback       import format_exc
+from threading       import Thread
+from random          import random, randint, choice
+from ctypes          import windll
+from time            import time, sleep
+from json            import load
+from math            import sin
+from os              import listdir
 
 class Empty: ...
 
 # Initializing the window
-screen = pyglet.canvas.get_display().get_screens()
-window = pyglet.window.Window(fullscreen=True, screen=screen[0])
+try:
+	screen = get_display().get_screens()
+	window = Window(
+		fullscreen = True,
+		screen     = screen[0],
+		caption    = 'Bubbles and Chillout'
+		)
+except:
+	with open('traceback.txt', 'w') as exception_file:
+		exception_file.write(format_exc())
+	windll.user32.MessageBoxW(
+		0,
+		'An exception occurred during window initialization. Traceback was dumped to a file traceback.txt.',
+		'Bubbles and Chillout',
+		0x00000010
+	)
+	exit(-1)
+
 window.set_mouse_visible(False)
 
+
 # Loading localization strings
-with open('resources/localization.json', 'r', encoding = 'utf-8') as file: locales = load(file)
-# Loading user settings
-with open('data/settings.json', 'r') as file: settings = load(file)
+with open('resources/data/localization.json', 'r', encoding = 'utf-8') as file: locales = load(file)
 
 # Loading images
-bubble_img                  = pyglet.image.load('resources/sprites/bubble.png')
-weighted_companion_cube_img = pyglet.image.load('resources/sprites/weighted_companion_cube.png')
-cursor_img                  = pyglet.image.load('resources/sprites/cursor.png')
-github_img                  = pyglet.image.load('resources/sprites/github.png')
-settings_img                = pyglet.image.load('resources/sprites/settings.png')
-shuffle_img                 = pyglet.image.load('resources/sprites/shuffle.png')
-play_pause_img              = pyglet.image.load('resources/sprites/play_pause.png')
-show_img                    = pyglet.image.load('resources/sprites/show.png')
-hide_img                    = pyglet.image.load('resources/sprites/hide.png')
-cross_img                   = pyglet.image.load('resources/sprites/cross.png')
-disabled_img                = pyglet.image.load('resources/sprites/disabled.png')
-enabled_img                 = pyglet.image.load('resources/sprites/enabled.png')
-globe_img                   = pyglet.image.load('resources/sprites/globe.png')
-pulse_img                   = pyglet.image.load('resources/sprites/pulse.png')
-level0_img                  = pyglet.image.load('resources/sprites/level_off.png')
-level1_img                  = pyglet.image.load('resources/sprites/level_low.png')
-level2_img                  = pyglet.image.load('resources/sprites/level_medium.png')
-level3_img                  = pyglet.image.load('resources/sprites/level_high.png')
+bubble_img                  = load_image('resources/sprites/bubble.png')
+weighted_companion_cube_img = load_image('resources/sprites/weighted_companion_cube.png')
 
+cursor_img     = load_image('resources/ui/cursor.png')
+github_img     = load_image('resources/ui/github.png')
+settings_img   = load_image('resources/ui/settings.png')
+shuffle_img    = load_image('resources/ui/shuffle.png')
+play_pause_img = load_image('resources/ui/play_pause.png')
+show_img       = load_image('resources/ui/show.png')
+hide_img       = load_image('resources/ui/hide.png')
+minimize_img   = load_image('resources/ui/minimize.png')
+cross_img      = load_image('resources/ui/cross.png')
+disabled_img   = load_image('resources/ui/disabled.png')
+enabled_img    = load_image('resources/ui/enabled.png')
+globe_img      = load_image('resources/ui/globe.png')
+pulse_img      = load_image('resources/ui/pulse.png')
+level0_img     = load_image('resources/ui/level_off.png')
+level1_img     = load_image('resources/ui/level_low.png')
+level2_img     = load_image('resources/ui/level_medium.png')
+level3_img     = load_image('resources/ui/level_high.png')
+
+# Settings up anchors
 weighted_companion_cube_img.anchor_x = weighted_companion_cube_img.width // 2
 weighted_companion_cube_img.anchor_y = weighted_companion_cube_img.height // 2
 
 # Creating sprites from images
-cursor = pyglet.sprite.Sprite(cursor_img)
+cursor = Sprite(cursor_img)
 
 # Creating drawing batches
-settings_batch = pyglet.graphics.Batch()
-ui_batch = pyglet.graphics.Batch()
+settings_batch = Batch()
+ui_batch       = Batch()
 
 # Loading music
-with open('resources/music_meta.json', 'r') as file: music_meta = load(file)
+with open('resources/data/music_meta.json', 'r') as file: music_meta = load(file)
 music = []
 for fname in listdir('resources/music/'):
 	if fname not in music_meta:
 		Console.log(f'"resources/music/{fname}" has no accompanying entry in music_meta; skipping', 'ResourceLoader', 'W')
 		continue
 	music.append({
-		'media': pyglet.resource.media(f'resources/music/{fname}'),
+		'media': media(f'resources/music/{fname}'),
 		'name': music_meta[fname]['name']
 	})
 
 # Looped playlist generator
-shuffle_playlist = settings['shuffle']
 selected_track = 0
 def media_player_controller():
 	global selected_track
 
 	while True:
-		if shuffle_playlist:
+		if settings['shuffle']:
 			next_track = randint(0, len(music) - 1)
 			while next_track == selected_track:
 				next_track = randint(0, len(music) - 1)
@@ -83,25 +113,23 @@ def media_player_controller():
 		yield music[selected_track]['media']
 
 # Initializing the media player
-media_player = pyglet.media.Player()
+media_player = Player()
 media_player.queue(media_player_controller())
 
 locales_list = list(locales.keys())
-locale = settings['locale']
 def change_language():
-	global locale
-	locale += 1
-	if locale == len(locales_list):
-		locale = 0
+	settings['locale'] += 1
+	if settings['locale'] == len(locales_list):
+		settings['locale'] = 0
 
-	song_name.text = f'{locales[locales_list[locale]]["song"]}: {music[0]["name"]}'
-	song_hint.text = locales[locales_list[locale]]['to_skip'].format('+'.join(['Ctrl', 'N']))
-	locale_label.text = f'{locales[locales_list[locale]]["self_name"]} ({locales[locales_list[locale]]["en_name"]})'
-	restore_ui_hint.text = locales[locales_list[locale]]['restore_ui_hint'].format('+'.join(['F1']))
+	song_name.text = f'{locales[locales_list[settings["locale"]]]["song"]}: {music[0]["name"]}'
+	song_hint.text = locales[locales_list[settings["locale"]]]['to_skip'].format('+'.join(['Ctrl', 'N']))
+	locale_label.text = f'{locales[locales_list[settings["locale"]]]["self_name"]} ({locales[locales_list[settings["locale"]]]["en_name"]})'
+	restore_ui_hint.text = locales[locales_list[settings['locale']]]['restore_ui_hint'].format('+'.join(['F1']))
 
 # Pop-up with the track name
-song_name = pyglet.text.Label(
-	text      = f'{locales[locales_list[locale]]["song"]}: {music[0]["name"]}',
+song_name = Label(
+	text      = f'{locales[locales_list[settings["locale"]]]["song"]}: {music[0]["name"]}',
 	font_name = 'Arial',
 	font_size = 50,
 	bold      = True,
@@ -111,8 +139,8 @@ song_name = pyglet.text.Label(
 	y         = 55,
 	anchor_x  = 'right'
 )
-song_hint = pyglet.text.Label(
-	text      = locales[locales_list[locale]]['to_skip'].format('+'.join(['Ctrl', 'N'])),
+song_hint = Label(
+	text      = locales[locales_list[settings["locale"]]]['to_skip'].format('+'.join(['Ctrl', 'N'])),
 	font_name = 'Arial',
 	font_size = 17,
 	italic    = True,
@@ -122,8 +150,8 @@ song_hint = pyglet.text.Label(
 	anchor_x  = 'right'
 )
 
-locale_label = pyglet.text.Label(
-	text      = f'{locales[locales_list[locale]]["self_name"]} ({locales[locales_list[locale]]["en_name"]})',
+locale_label = Label(
+	text      = f'{locales[locales_list[settings["locale"]]]["self_name"]} ({locales[locales_list[settings["locale"]]]["en_name"]})',
 	font_name = 'Arial',
 	font_size = 20,
 	color     = (255, 255, 255, 100),
@@ -133,8 +161,8 @@ locale_label = pyglet.text.Label(
 	batch     = settings_batch
 )
 
-restore_ui_hint = pyglet.text.Label(
-	text      = locales[locales_list[locale]]['restore_ui_hint'].format('+'.join(['F1'])),
+restore_ui_hint = Label(
+	text      = locales[locales_list[settings["locale"]]]['restore_ui_hint'].format('+'.join(['F1'])),
 	font_name = 'Arial',
 	font_size = 20,
 	italic    = True,
@@ -144,20 +172,13 @@ restore_ui_hint = pyglet.text.Label(
 	anchor_y  = 'top',
 )
 
-# A function that makes the track name visible for 5 seconds. Blocking (requires a dedicated thread for OpenGL to work).
-showing_song_info = False
-def show_song_info():
-	global showing_song_info
-	showing_song_info = True
-	sleep(5)
-	showing_song_info = False
-
+show_song_info_until = time()
 # Media player on_player_next_source event handler
 @media_player.event
 def on_player_next_source():
-	song_name.text = f'{locales[locales_list[locale]]["song"]}: {music[selected_track]["name"]}'
-	thr = Thread(target=show_song_info, args=())
-	thr.start()
+	global show_song_info_until
+	song_name.text = f'{locales[locales_list[settings["locale"]]]["song"]}: {music[selected_track]["name"]}'
+	show_song_info_until = time() + 5
 
 # Opens the project page on GitHub in the browser
 def open_github():
@@ -199,22 +220,23 @@ def toggle_ui():
 		toggle_settings()
 	if not restore_ui_hint_already_shown:
 		restore_ui_hint_already_shown = True
-		thr = Thread(target = restore_ui_hint_controller, args = ())
+		thr = Thread(
+			target = restore_ui_hint_controller,
+			args   = (),
+			name   = 'RestoreUIControllerThread'
+		)
 		thr.start()
 
 # Enables/Disables playlist shuffling
 def toggle_shuffle():
-	global shuffle_playlist
-	shuffle_playlist = not shuffle_playlist
+	settings['shuffle'] = not settings['shuffle']
 
-shake_level = settings['shake_level']
 def change_shake_level():
-	global shake_level
-	shake_level += 1
-	if shake_level > 3:
-		shake_level = 0
-	shake_level_widget.level = shake_level
-	Effector.shake_widget(3 * shake_level, 3 * shake_level, 0.25)
+	settings['shake_level'] += 1
+	if settings['shake_level'] > 3:
+		settings['shake_level'] = 0
+	shake_level_widget.level = settings['shake_level']
+	Effector.shake_widget(3 * settings['shake_level'], 3 * settings['shake_level'], 0.25)
 
 def close_app():
 	on_close()
@@ -232,9 +254,9 @@ class Effector:
 
 	def shake_fx(x_offset: int, y_offset: int, end_time: float):
 		global render_offset
-		if not pyglet.app.event_loop.is_running:
+		if not event_loop.is_running:
 			Console.log('waiting until event_loop runs', 'Effector.shake', 'I')
-			while not pyglet.app.event_loop.is_running:
+			while not event_loop.is_running:
 				sleep(0.2)
 			Console.log('met event_loop', 'Effector.shake', 'I')
 		Console.log('started', 'Effector.shake', 'D')
@@ -250,7 +272,7 @@ class Effector:
 				render_offset.x = choice(xs)
 			if ys:
 				render_offset.y = choice(ys)
-			if not pyglet.app.event_loop.is_running:
+			if not event_loop.is_running:
 				Console.log('event_loop is inactive; ending', 'Effector.shake', 'I')
 				return None
 			sleep(0.01)
@@ -259,9 +281,9 @@ class Effector:
 		render_offset.y = 0
 	
 	def shake_widget_fx(x_offset: int, y_offset: int, end_time: float):
-		if not pyglet.app.event_loop.is_running:
+		if not event_loop.is_running:
 			Console.log('waiting until event_loop runs', 'Effector.shake_widget', 'I')
-			while not pyglet.app.event_loop.is_running:
+			while not event_loop.is_running:
 				sleep(0.2)
 			Console.log('met event_loop', 'Effector.shake_widget', 'I')
 		Console.log('started', 'Effector.shake_widget', 'D')
@@ -270,8 +292,10 @@ class Effector:
 		while time() < end_time:
 			xs = list([i + sx for i in range(-x_offset, x_offset + 1)])
 			ys = list([i + sy for i in range(-y_offset, y_offset + 1)])
-			xs.remove(shake_level_widget.sprites[0].x)
-			ys.remove(shake_level_widget.sprites[0].y)
+			try:
+				xs.remove(shake_level_widget.sprites[0].x)
+				ys.remove(shake_level_widget.sprites[0].y)
+			except: ...
 			if not (xs or ys):
 				Console.log('effect cannot be played: all of offsets == 0', 'Effector.shake_widget', 'I')
 				return None
@@ -281,7 +305,7 @@ class Effector:
 			if ys:
 				for sprite in shake_level_widget.sprites:
 					sprite.y = choice(ys)
-			if not pyglet.app.event_loop.is_running:
+			if not event_loop.is_running:
 				Console.log('event_loop is inactive; ending', 'Effector.shake_widget', 'I')
 				return None
 			sleep(0.01)
@@ -292,20 +316,28 @@ class Effector:
 
 	@classmethod
 	def shake(self, x_offset: int = 3, y_offset: int = 3, fx_time: float = 1):
-		thr = Thread(target=self.shake_fx, args=[x_offset, y_offset, time() + fx_time])
+		thr = Thread(
+			target = self.shake_fx,
+			args   = (x_offset, y_offset, time() + fx_time),
+			name   = 'ShakeFXThread'
+		)
 		thr.start()
 	
 	@classmethod
 	def shake_widget(self, x_offset: int = 3, y_offset: int = 3, fx_time: float = 1):
-		thr = Thread(target=self.shake_widget_fx, args=[x_offset, y_offset, time() + fx_time])
+		thr = Thread(
+			target = self.shake_widget_fx,
+			args   = (x_offset, y_offset, time() + fx_time),
+			name   = 'WidgetShakeFXThread'
+		)
 		thr.start()
 
 class LevelWidget:
 	def __init__(self, x: int, y: int, level_sprites: list):
 		self.sprites = []
 		for img in level_sprites:
-			self.sprites.append(pyglet.sprite.Sprite(img, x, y))
-		self.level = shake_level
+			self.sprites.append(Sprite(img, x, y))
+		self.level = settings['shake_level']
 	
 	def draw(self):
 		self.sprites[self.level].draw()
@@ -324,14 +356,14 @@ class Button:
 		self.y = y
 		self.w = w
 		self.h = h
-		self.sprite = pyglet.sprite.Sprite(texture, batch = settings_batch if 'settings' in classes else ui_batch, x = x, y = y)
+		self.sprite = Sprite(texture, batch = settings_batch if 'settings' in classes else ui_batch, x = x, y = y)
 		self.on_click = on_click
 		self.two_states = two_states
 		self.classes = classes
 		if self.two_states:
 			self.state = True
-			self.cross = pyglet.sprite.Sprite(disabled_img, x = self.x + self.w - 15, y = -15, batch = ui_batch)
-			self.tick = pyglet.sprite.Sprite(enabled_img, x = self.x + self.w - 15, y = self.y, batch = ui_batch)
+			self.cross = Sprite(disabled_img, x = self.x + self.w - 15, y = -15, batch = ui_batch)
+			self.tick = Sprite(enabled_img, x = self.x + self.w - 15, y = self.y, batch = ui_batch)
 	
 	def set_y(self, y: int):
 		self.y = y
@@ -373,10 +405,11 @@ buttons = [
 
 	Button(10, window.height - 60, 50, 50, hide_img, toggle_ui, False, []),
 
+	Button(window.width - 90, window.height - 40, 30, 30, minimize_img, window.minimize, False, ['window_controls']),
 	Button(window.width - 40, window.height - 40, 30, 30, cross_img, close_app, False, ['window_controls']),
 ]
 
-if not shuffle_playlist:
+if not settings['shuffle']:
 	buttons[2].state = False
 	buttons[2].cross.y = buttons[2].y
 	buttons[2].tick.y = -15
@@ -387,7 +420,7 @@ class Bubble:
 	size = bubble_img.width
 	tried_to_update = False
 	common = True
-	sprite = pyglet.sprite.Sprite(bubble_img)
+	sprite = Sprite(bubble_img)
 
 	def __init__(self, x_origin: int, amplitude: float = 150, frequency: float = 0.025, x_shift: int = 0, speed: float = 40, function = sin) -> None:
 		self.start_time = time()
@@ -409,7 +442,7 @@ class Bubble:
 	def update_y(self) -> None:
 		if not self.tried_to_update:
 			if random() <= 0.001:
-				self.sprite = pyglet.sprite.Sprite(weighted_companion_cube_img)
+				self.sprite = Sprite(weighted_companion_cube_img)
 				self.common = False
 			self.tried_to_update = True
 		if not self.common:
@@ -418,7 +451,7 @@ class Bubble:
 	
 	def pop(self):
 		self.sprite.y = window.height + self.size
-		Effector.shake(2 * shake_level, 2 * shake_level, 0.1)
+		Effector.shake(2 * settings['shake_level'], 2 * settings['shake_level'], 0.1)
 	
 	def draw(self):
 		self.sprite.x = self.x + render_offset.x
@@ -452,7 +485,7 @@ def on_draw():
 		shake_level_widget.draw()
 
 	# Draw song info if it should be displayed at the moment
-	if showing_song_info:
+	if show_song_info_until >= time():
 		song_name.draw()
 		song_hint.draw()
 	
@@ -499,11 +532,11 @@ def on_key_press(symbol, modifiers):
 		case key.ESCAPE:
 			if settings_shown:
 				toggle_settings()
-			return pyglet.event.EVENT_HANDLED
+			return EVENT_HANDLED
 		
 		case key.F1:
 			toggle_ui()
-			return pyglet.event.EVENT_HANDLED
+			return EVENT_HANDLED
 		
 		case key.S:
 			if modifiers & key.MOD_CTRL:
@@ -512,32 +545,28 @@ def on_key_press(symbol, modifiers):
 		case key.N:
 			if modifiers & key.MOD_CTRL:
 				media_player.next_source()
-				return pyglet.event.EVENT_HANDLED
+				return EVENT_HANDLED
 			
 		case key.SPACE:
 			toggle_playback()
-			return pyglet.event.EVENT_HANDLED
+			return EVENT_HANDLED
 
 @window.event
 def on_close():
 	Console.log('window was closed', 'IntentHandler', 'I')
-	Console.log('collecting app data to settings', 'IntentHandler', 'I')
-	settings['locale'] = locale
-	settings['shuffle'] = shuffle_playlist
-	settings['shake_level'] = shake_level
-	Console.log('dumping settings -> data/settings.json', 'IntentHandler', 'I')
-	with open('data/settings.json', 'w') as file: dump(settings, file, indent = 4)
+	Console.log('saving settings', 'IntentHandler', 'I')
+	save_settings()
 	Console.log('exitting', 'IntentHandler', 'I')
 
 # A function that creates random bubbles with a random delay. Blocking.
 def spawner():
 	Console.log('hello', 'Spawner', 'I')
-	if not pyglet.app.event_loop.is_running:
-		while not pyglet.app.event_loop.is_running:
+	if not event_loop.is_running:
+		while not event_loop.is_running:
 			Console.log('waiting until event_loop runs', 'Spawner', 'I')
 			sleep(0.2)
 	Console.log('met event_loop', 'Spawner', 'I')
-	while pyglet.app.event_loop.is_running:
+	while event_loop.is_running:
 		delay = randint(1, 3)
 		sleep(delay)
 		bubbles.reverse()
@@ -551,7 +580,11 @@ def spawner():
 	Console.log('event_loop is inactive; ending', 'Spawner', 'I')
 
 # Starting the spawner thread
-thr = Thread(target=spawner, args=())
+thr = Thread(
+	target = spawner,
+	args   = (),
+	name   = 'SpawnerThread'
+	)
 thr.start()
 
 # Starting the music
@@ -559,10 +592,10 @@ media_player.play()
 on_player_next_source()
 
 # Starting the Pyglet app
-pyglet.app.run()
+run()
 
 # Waiting for event_loop to stop, then delete media_player
-while pyglet.app.event_loop.is_running:
+while event_loop.is_running:
 	sleep(1)
 media_player.pause()
 media_player.delete()
