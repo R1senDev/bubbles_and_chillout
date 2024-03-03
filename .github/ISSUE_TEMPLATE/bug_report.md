@@ -21,7 +21,9 @@ Steps to reproduce the behavior:
 A clear and concise description of what you expected to happen.
 
 **`traceback.txt` contents (if present)**
-If applicable, add screenshots to help explain your problem.
+```
+Please, Copy&Paste traceback.txt here.
+```
 
 **Desktop (please complete the following information):**
  - OS version: [e.g. Windows 11]
