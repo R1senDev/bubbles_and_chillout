@@ -1,0 +1,2 @@
+colorama==0.4.6
+pyglet==2.1.6

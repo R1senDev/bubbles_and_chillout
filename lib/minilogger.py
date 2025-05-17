@@ -1,14 +1,15 @@
+from types import SimpleNamespace
+
 try:
     from colorama import Fore, Back, Style
 except:
-    class Empty: ...
-    Fore = Empty()
+    Fore = SimpleNamespace()
     Fore.RED = ''
     Fore.YELLOW = ''
     Fore.LIGHTBLACK_EX = ''
-    Back = Empty()
+    Back = SimpleNamespace()
     Back.RED = ''
-    Style = Empty()
+    Style = SimpleNamespace()
     Style.RESET_ALL = ''
 
 scheme = {
@@ -48,10 +49,10 @@ class Console:
     level = 'D'
 
     @classmethod
-    def log(self, message: str, source: str = 'main', level: str = 'I'):
+    def log(cls, message: str, source: str = 'main', level: str = 'I'):
         level = level.upper()
 
-        if scheme[self.level.upper()]['level'] < scheme[level]['level']:
+        if scheme[cls.level.upper()]['level'] < scheme[level]['level']:
             return None
 
         print(f'{scheme[level]["fore"]}{scheme[level]["back"]}{scheme[level]["description"]}{Style.RESET_ALL} \t{scheme[level]["fore"]}{scheme[level]["back"]}{source}{Style.RESET_ALL} \t{scheme[level]["fore"]}{scheme[level]["back"]}{message}{Style.RESET_ALL}')

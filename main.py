@@ -1,8 +1,11 @@
+from lib.plato import show_popup
+from traceback import format_exc
+
 try:
 
 	from pyglet.graphics import Batch
 	from pyglet.resource import media
-	from pyglet.canvas   import get_display
+	from pyglet.display  import get_display
 	from pyglet.window   import key, Window
 	from pyglet.shapes   import Rectangle
 	from pyglet.sprite   import Sprite
@@ -15,15 +18,15 @@ try:
 	from lib.settingsmgr import settings, save_settings
 	from lib.minilogger  import Console
 
-	from webbrowser      import open as open_url
-	from traceback       import format_exc
-	from threading       import Thread
-	from random          import random, randint, choice
-	from ctypes          import windll
-	from time            import time, sleep
-	from json            import load
-	from math            import sin
-	from os              import listdir
+	from webbrowser import open as open_url
+	from platform   import system
+	from threading  import Thread
+	from random     import random, randint, choice
+	from types      import SimpleNamespace
+	from time       import time, sleep
+	from json       import load
+	from math       import sin
+	from os         import listdir
 
 	class Empty: ...
 
@@ -39,11 +42,9 @@ try:
 
 		with open('traceback.txt', 'w') as exception_file:
 			exception_file.write(format_exc())
-		windll.user32.MessageBoxW(
-			0,
-			'An exception occurred during window initialization. Traceback was dumped to a file traceback.txt.',
+		show_popup(
 			'Bubbles and Chillout',
-			0x00000010
+			'An exception occurred during window initialization. Traceback was dumped to a file traceback.txt.'
 		)
 		exit(-1)
 
@@ -135,7 +136,7 @@ try:
 		text      = f'{locales[locales_list[settings["locale"]]]["song"]}: {music[0]["name"]}',
 		font_name = 'Arial',
 		font_size = 50,
-		bold      = True,
+		weight    = 'bold',
 		italic    = True,
 		color     = (255, 255, 255, 125),
 		x         = window.width - 10,
@@ -248,14 +249,15 @@ try:
 	bubbles = []
 
 	# Render offset (required for shaking animation)
-	render_offset = Empty()
+	render_offset = SimpleNamespace()
 	render_offset.x = 0
 	render_offset.y = 0
 
 	# Creates effects (shaking)
 	class Effector:
 
-		def shake_fx(x_offset: int, y_offset: int, end_time: float):
+		@classmethod
+		def shake_fx(cls, x_offset: int, y_offset: int, end_time: float):
 			global render_offset
 			if not event_loop.is_running:
 				Console.log('waiting until event_loop runs', 'Effector.shake', 'I')
@@ -283,7 +285,8 @@ try:
 			render_offset.x = 0
 			render_offset.y = 0
 
-		def shake_widget_fx(x_offset: int, y_offset: int, end_time: float):
+		@classmethod
+		def shake_widget_fx(cls, x_offset: int, y_offset: int, end_time: float):
 			if not event_loop.is_running:
 				Console.log('waiting until event_loop runs', 'Effector.shake_widget', 'I')
 				while not event_loop.is_running:
@@ -318,18 +321,18 @@ try:
 				sprite.y = sy
 
 		@classmethod
-		def shake(self, x_offset: int = 3, y_offset: int = 3, fx_time: float = 1):
+		def shake(cls, x_offset: int = 3, y_offset: int = 3, fx_time: float = 1):
 			thr = Thread(
-				target = self.shake_fx,
+				target = cls.shake_fx,
 				args   = (x_offset, y_offset, time() + fx_time),
 				name   = 'ShakeFXThread'
 			)
 			thr.start()
 
 		@classmethod
-		def shake_widget(self, x_offset: int = 3, y_offset: int = 3, fx_time: float = 1):
+		def shake_widget(cls, x_offset: int = 3, y_offset: int = 3, fx_time: float = 1):
 			thr = Thread(
-				target = self.shake_widget_fx,
+				target = cls.shake_widget_fx,
 				args   = (x_offset, y_offset, time() + fx_time),
 				name   = 'WidgetShakeFXThread'
 			)
@@ -577,7 +580,7 @@ try:
 				x_origin  = randint(0, window.width - bubble_img.width),
 				speed     = randint(30, 60),
 				frequency = randint(15, 25) / 1000,
-				x_shift   = random() * 2 - 1
+				x_shift   = int(random() * 2 - 1)
 			))
 			bubbles.reverse()
 		Console.log('event_loop is inactive; ending', 'Spawner', 'I')
@@ -608,11 +611,9 @@ except:
 	with open('traceback.txt', 'w') as exception_file:
 			exception_file.write(format_exc())
 
-	windll.user32.MessageBoxW(
-		0,
-		'An exception occurred. Traceback was dumped to a file traceback.txt.',
+	show_popup(
 		'Bubbles and Chillout',
-		0x00000010
+		'An exception occurred. Traceback was dumped to a file traceback.txt.'
 	)
 
 	exit(-1)
