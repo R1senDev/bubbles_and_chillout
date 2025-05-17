@@ -1,7 +1,6 @@
-from getpass import getuser
-from .plato  import appdata_path
-from json    import load, dump
-from os      import makedirs
+from .plato import appdata_path
+from json   import load, dump
+from os     import makedirs
 
 APPDATA_PATH = appdata_path('BubblesAndChillout')
 

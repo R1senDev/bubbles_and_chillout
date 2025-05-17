@@ -7,7 +7,6 @@ try:
 	from pyglet.resource import media
 	from pyglet.display  import get_display
 	from pyglet.window   import key, Window
-	from pyglet.shapes   import Rectangle
 	from pyglet.sprite   import Sprite
 	from pyglet.image    import load as load_image
 	from pyglet.event    import EVENT_HANDLED
@@ -19,7 +18,6 @@ try:
 	from lib.minilogger  import Console
 
 	from webbrowser import open as open_url
-	from platform   import system
 	from threading  import Thread
 	from random     import random, randint, choice
 	from types      import SimpleNamespace
