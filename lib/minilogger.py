@@ -12,7 +12,7 @@ except:
     Style = SimpleNamespace()
     Style.RESET_ALL = ''
 
-scheme = {
+scheme: dict[str, dict[str, str | int]] = {
     'F': {
         'description': 'FATAL',
         'level': 0,
@@ -52,7 +52,7 @@ class Console:
     def log(cls, message: str, source: str = 'main', level: str = 'I'):
         level = level.upper()
 
-        if scheme[cls.level.upper()]['level'] < scheme[level]['level']:
+        if scheme[cls.level.upper()]['level'] < scheme[level]['level']: # type: ignore
             return None
 
         print(f'{scheme[level]["fore"]}{scheme[level]["back"]}{scheme[level]["description"]}{Style.RESET_ALL} \t{scheme[level]["fore"]}{scheme[level]["back"]}{source}{Style.RESET_ALL} \t{scheme[level]["fore"]}{scheme[level]["back"]}{message}{Style.RESET_ALL}')

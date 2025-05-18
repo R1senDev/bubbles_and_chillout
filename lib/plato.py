@@ -17,6 +17,8 @@ def show_popup(title: str, message: str) -> None:
             run(['powershell', '-Command', f'Add-Type -AssemblyName PresentationFramework; [System.Windows.MessageBox]::Show(\'{message}\', \'{title}\')'])
         case 'Linux':
             run(['zenity', '--info', f'--title={title}', f'--text={message}'])
+        case _: 
+            raise RuntimeError() # this should be unreachable :)
 
 
 def appdata_path(progname: str) -> str:
@@ -25,4 +27,5 @@ def appdata_path(progname: str) -> str:
             return f'C:/Users/{getuser()}/AppData/Local/{progname}'
         case 'Linux':
             return expanduser(f'~/.config/{progname}')
-    raise RuntimeError() # this should be unreachable :)
+        case _: 
+            raise RuntimeError() # this should be unreachable :)

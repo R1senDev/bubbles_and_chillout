@@ -1,23 +1,30 @@
 {
     "Barradeen_Boku_No_Love.mp3": {
-        "name": "Barradeen - Boku No Love"
+        "artist": "Barradeen",
+        "name": "Boku No Love"
     },
     "Deoxys_Beats_Tinyevil.mp3": {
-        "name": "Deoxys Beats - Tinyevil"
+        "artist": "Deoxys Beats",
+        "name": "Tinyevil"
     },
     "Extenz_Life.mp3": {
-        "name": "Extenz - Life"
+        "artist": "Extenz",
+        "name": "Life"
     },
     "Ghostrifter_Hot_Coffee.mp3": {
-        "name": "Ghostrifter - Hot Coffee"
+        "artist": "Ghostrifter",
+        "name": "Hot Coffee"
     },
     "Le_Gang_It_Meant_Everything_To_Me.mp3": {
-        "name": "Le Gang - It Meant Everything To Me"
+        "artist": "Le Gang",
+        "name": "It Meant Everything To Me"
     },
     "Le_Gang_Pain_Away.mp3": {
-        "name": "Le Gang - Pain Away"
+        "artist": "Le Gang",
+        "name": "Pain Away"
     },
     "Zeli_Sharks.mp3": {
-        "name": "Zeli - Sharks"
+        "artist": "Zeli",
+        "name": "Sharks"
     }
 }

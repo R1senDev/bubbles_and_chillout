@@ -4,7 +4,7 @@
 
 
 from threading import Thread
-from inputs    import get_gamepad, InputEvent
+from inputs    import get_gamepad, InputEvent # type: ignore
 
 
 class EventType:

@@ -1,10 +1,11 @@
 from .plato import appdata_path
+from typing import Any
 from json   import load, dump
 from os     import makedirs
 
 APPDATA_PATH = appdata_path('BubblesAndChillout')
 
-default_settings = {
+default_settings: dict[str, Any] = {
     'config_version': 2,
     'locale': 0,
     'shuffle': True,
@@ -16,7 +17,7 @@ default_settings = {
 }
 try:
     makedirs(f'{APPDATA_PATH}/')
-    settings = default_settings
+    settings: dict[str, Any] = default_settings
     with open(f'{APPDATA_PATH}/settings.json', 'w') as file:
         dump(default_settings, file)
 except OSError:

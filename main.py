@@ -3,37 +3,49 @@ from traceback import format_exc
 
 try:
 
-	from pyglet.graphics import Batch
-	from pyglet.resource import media
-	from pyglet.display  import get_display
-	from pyglet.window   import key, Window
-	from pyglet.sprite   import Sprite
-	from pyglet.image    import load as pgl_load_image, AbstractImage
-	from pyglet.clock    import schedule_interval
-	from pyglet.event    import EVENT_HANDLED
-	from pyglet.media    import Player
-	from pyglet.text     import Label
-	from pyglet.app      import event_loop, run
+	from pyglet.media.codecs.base import Source
+	from pyglet.graphics          import Batch
+	from pyglet.resource          import media, add_font
+	from pyglet.display           import get_display
+	from pyglet.window            import key, Window
+	from pyglet.shapes            import Rectangle, Circle
+	from pyglet.sprite            import Sprite
+	from pyglet.image             import load as load_image, AbstractImage
+	from pyglet.clock             import schedule_interval # type: ignore
+	from pyglet.event             import EVENT_HANDLED, EVENT_UNHANDLED
+	from pyglet.media             import Player
+	from pyglet.text              import Label
+	from pyglet.app               import event_loop, run
 
 	from lib.settingsmgr import settings, save_settings
+	from lib.commonsense import IntPoint
 	from lib.pligamepad  import GamepadListener
 	from lib.minilogger  import Console
+	from lib.gridgen     import grid
 
 	from webbrowser import open as open_url
 	from threading  import Thread
+	from string     import ascii_lowercase, digits
 	from random     import random, randint, choice
+	from typing     import Any, Literal, Union, Callable, Generator
+	from types      import SimpleNamespace
 	from time       import time, sleep
 	from json       import load
 	from math       import sin
 	from os         import listdir
 
 
-	def load_image(path: str) -> AbstractImage:
-		Console.log(f'loading image asset: {path}', 'Loader')
-		return pgl_load_image(path)
+	Asset = Union[AbstractImage, Source]
+	AnchorX = Literal['left', 'center', 'right']
+	AnchorY = Literal['top', 'center', 'bottom', 'baseline']
+	ContentVAlign = Literal['bottom', 'center', 'top']
 
 
-	# Initializing the window
+	####################
+	##  INITIALIZING  ##
+	####################
+
+
 	try:
 		screen = get_display().get_screens()
 		window = Window(
@@ -54,6 +66,10 @@ try:
 		exit(-1)
 
 	window.set_mouse_visible(False)
+	window.set_mouse_position(window.width // 2, window.height // 2)
+
+	media_player = Player()
+	gamepad = GamepadListener()
 
 
 	##############
@@ -61,54 +77,111 @@ try:
 	##############
 
 
+	class AssetsManager:
+
+		_consts = SimpleNamespace()
+		_consts.allowed_chars = ascii_lowercase + digits + '_'
+		_consts.banned_lead   = digits
+		_consts.fallback_char = '_'
+		_consts.image_exts = ('png', 'jpg', 'jpeg', 'bmp')
+		_consts.media_exts = ('wav', 'ogg', 'mp3')
+		assets = SimpleNamespace()
+
+		@classmethod
+		def _reg_name_by_fname(cls, fname: str) -> str:
+
+			reg_name = ''
+
+			for _char in fname:
+				char = _char.lower()
+				if char in cls._consts.allowed_chars:
+					reg_name += char
+				else:
+					reg_name += cls._consts.fallback_char
+
+			reg_name = reg_name.lstrip(cls._consts.banned_lead)
+
+			return reg_name
+		
+		@classmethod
+		def _load_asset(cls, path: str) -> Asset | None:
+			while '//' in path: path = path.replace('//', '/')
+			Console.log(f'loading asset: {path}', 'AssetsLoader', 'I')
+			ext = path.rsplit('.')[-1]
+			if ext in cls._consts.image_exts: return load_image(path)
+			if ext in cls._consts.media_exts: return media(path)
+			Console.log(f'failed loading asset: {path}: unable to guess asset category', 'AssetsLoader', 'E')
+
+		@classmethod
+		def load_folder(cls, path: str, group_name: str) -> None:
+
+			path += ''
+			assets = SimpleNamespace()
+
+			for fname in listdir(path):
+				reg_name = fname.rsplit('.')[0].replace('-', '_')
+				asset = cls._load_asset(f'{path}/{fname}')
+				assets.__setattr__(reg_name, asset)
+			
+			cls.assets.__setattr__(group_name, assets)
+
+		@classmethod
+		def _load_font(cls, path: str) -> None:
+			while '//' in path: path = path.replace('//', '/')
+			Console.log(f'loading font asset: {path}', 'AssetManager', 'I')
+			add_font(path)
+
+		@classmethod
+		def load_fonts_folder(cls, path: str) -> None:
+			for fname in listdir(path):
+				cls._load_font(f'{path}/{fname}')
+
+
+	class Track:
+
+		def __init__(self, media: Source, artist: str, title: str) -> None:
+
+			self.media = media
+			self.artist = artist
+			self.title = title
+
+
 	# Loading localization strings
 	with open('resources/data/localization.json', 'r', encoding = 'utf-8') as file: locales = load(file)
+	locales_list = list(locales.keys())
 
-	# Loading images
-	bubble_img                  = load_image('resources/sprites/bubble.png')
-	weighted_companion_cube_img = load_image('resources/sprites/weighted_companion_cube.png')
-
-	cursor_img     = load_image('resources/ui/cursor.png')
-	github_img     = load_image('resources/ui/github.png')
-	settings_img   = load_image('resources/ui/settings.png')
-	shuffle_img    = load_image('resources/ui/shuffle.png')
-	play_pause_img = load_image('resources/ui/play_pause.png')
-	show_img       = load_image('resources/ui/show.png')
-	hide_img       = load_image('resources/ui/hide.png')
-	minimize_img   = load_image('resources/ui/minimize.png')
-	cross_img      = load_image('resources/ui/cross.png')
-	disabled_img   = load_image('resources/ui/disabled.png')
-	enabled_img    = load_image('resources/ui/enabled.png')
-	globe_img      = load_image('resources/ui/globe.png')
-	pulse_img      = load_image('resources/ui/pulse.png')
-	level0_img     = load_image('resources/ui/level_off.png')
-	level1_img     = load_image('resources/ui/level_low.png')
-	level2_img     = load_image('resources/ui/level_medium.png')
-	level3_img     = load_image('resources/ui/level_high.png')
+	# Loading assets
+	AssetsManager.load_folder('resources/sprites/', 'sprites')
+	AssetsManager.load_folder('resources/ui/',      'ui')
 
 	# Settings up anchors
-	weighted_companion_cube_img.anchor_x = weighted_companion_cube_img.width // 2
-	weighted_companion_cube_img.anchor_y = weighted_companion_cube_img.height // 2
-
+	AssetsManager.assets.sprites.weighted_companion_cube.anchor_x = AssetsManager.assets.sprites.weighted_companion_cube.width // 2
+	AssetsManager.assets.sprites.weighted_companion_cube.anchor_y = AssetsManager.assets.sprites.weighted_companion_cube.height // 2
+	
+	# Loading fonts
+	AssetsManager.load_fonts_folder('resources/fonts/')
+	
 	# Creating sprites from images
-	cursor = Sprite(cursor_img)
+	cursor = Sprite(AssetsManager.assets.ui.cursor)
 
-	# Creating drawing batches
+	# Creating rendering batches
 	settings_batch      = Batch()
 	ui_batch            = Batch()
 	gamepad_ctrls_batch = Batch()
 
 	# Loading music
-	with open('resources/data/music_meta.json', 'r') as file: music_meta = load(file)
-	music = []
+	with open('resources/data/music_meta.json', 'r') as file:
+		music_meta: dict[str, dict[str, str]] = load(file)
+	music: list[Track] = []
 	for fname in listdir('resources/music/'):
 		if fname not in music_meta:
 			Console.log(f'"resources/music/{fname}" has no accompanying entry in music_meta; skipping', 'ResourceLoader', 'W')
 			continue
-		music.append({
-			'media': media(f'resources/music/{fname}'),
-			'name': music_meta[fname]['name']
-		})
+		music.append(Track(
+			media(f'resources/music/{fname}'),
+			music_meta[fname]['artist'],
+			music_meta[fname]['name']
+		))
 
 
 	###############
@@ -116,19 +189,147 @@ try:
 	###############
 
 
-	class Hotkeys:
+	class OldGamepadStates:
+		start = False
+		mode  = False
+		rb    = False
+		a     = False
+		b     = False
+		x     = False
+
+
+	class Showing:
+		song_info_until: float   = 0.0
+		settings: bool           = False
+		restore_ui_hint: bool    = False
+		ui: bool                 = True
+		gamepad_ctrls_hint: bool = False
+		class Allowed:
+			restore_ui_hint: bool = True
+
+
+	class Controls:
+		'''
+		This class manages *labels* for GUI controls hints, not influencing on the actual binds.
+		'''
 		class Keyboard:
-			TOGGLE_UI  = 'F1'
-			SKIP_TRACK = 'Ctrl+N'
+			'''
+			These strings will be shown only if player uses **keyboard** as the input method.
+			'''
+			HELP_WINDOW    = 'ctrl_start'
+			MOUSE_MOVE     = 'ctrl_left_stk'
+			MOUSE_PRESS    = 'ctrl_lmb'
+			PAUSE_MUSIC    = 'ctrl_space'
+			TOGGLE_UI      = 'ctrl_f1'
+			SKIP_TRACK     = 'ctrl_ctrln'
+			TOGGLE_SHUFFLE = 'ctrl_ctrls'
+			CLOSE_HELP     = 'ctrl_start'
+			EXIT_GAME      = 'ctrl_modeb'
 		class Gamepad:
-			TOGGLE_UI  = 'X'
-			SKIP_TRACK = 'RB'
+			'''
+			These strings will be shown only if player uses **gamepad** as the input method.
+			'''
+			HELP_WINDOW    = 'ctrl_start'
+			MOUSE_MOVE     = 'ctrl_left_stk'
+			MOUSE_PRESS    = 'ctrl_gmp_a'
+			PAUSE_MUSIC    = 'ctrl_gmp_b'
+			TOGGLE_UI      = 'ctrl_gmp_x'
+			SKIP_TRACK     = 'ctrl_rb'
+			TOGGLE_SHUFFLE = 'ctrl_ctrls'
+			CLOSE_HELP     = 'ctrl_start'
+			EXIT_GAME      = 'ctrl_modeb'
+		provider: Keyboard | Gamepad = Keyboard # type: ignore
 
 
-	class IntPoint:
-		def __init__(self, x: int, y: int) -> None:
-			self.x = x
-			self.y = y
+	class ExtLabel(Label):
+		def __init__(
+				self,
+				text: str = '',
+				x: float = 0,
+				y: float = 0,
+				z: float = 0,
+				width: int | None = None,
+				height: int | None = None,
+				anchor_x: AnchorX = 'left',
+				anchor_y: AnchorY = 'baseline',
+				rotation: float = 0,
+				multiline: bool = False,
+				dpi: int | None = None,
+				font_name: str | None = None,
+				font_size: float | None = None,
+				weight: str = 'normal',
+				italic: bool | str = False,
+				stretch: bool | str = False,
+				color: tuple[int, int, int, int] | tuple[int, int, int] = (255, 255, 255, 255),
+				align: ContentVAlign = 'bottom',
+				batch: Batch | None = None
+				) -> None:
+			super().__init__(text, x, y, z, width, height, anchor_x, anchor_y, rotation, multiline, dpi, font_name, font_size, weight, italic, stretch, color, align, batch)
+			self.default_weight = weight
+			self.default_italic = italic
+
+		
+	class RoundedRectangle:
+
+		def __init__(
+				self,
+				pos: IntPoint,
+				size: IntPoint,
+				radius: int,
+				color: tuple[int, int, int] = (255, 255, 255),
+				batch: Batch | None = None
+				) -> None:
+			_color = color + (255,)
+			self.drawables: list[Rectangle | Circle] = [
+				Rectangle(
+					x      = pos.x + radius,
+					y      = pos.y,
+					width  = size.x - 2 * radius,
+					height = size.y,
+					color  = _color,
+					batch  = batch
+				),
+				Rectangle(
+					x      = pos.x,
+					y      = pos.y + radius,
+					width  = size.x,
+					height = size.y - 2 * radius,
+					color  = _color,
+					batch  = batch
+				),
+				Circle(
+					x      = pos.x + radius,
+					y      = pos.y + radius,
+					radius = radius,
+					color  = _color,
+					batch  = batch
+				),
+				Circle(
+					x      = pos.x + size.x - radius,
+					y      = pos.y + radius,
+					radius = radius,
+					color  = _color,
+					batch  = batch
+				),
+				Circle(
+					x      = pos.x + size.x - radius,
+					y      = pos.y + size.y - radius,
+					radius = radius,
+					color  = _color,
+					batch  = batch
+				),
+				Circle(
+					x      = pos.x + radius,
+					y      = pos.y + size.y - radius,
+					radius = radius,
+					color  = _color,
+					batch  = batch
+				)
+			]
+
+		def draw(self) -> None:
+			for drawable in self.drawables:
+				drawable.draw()
 
 
 	class Effector:
@@ -203,36 +404,36 @@ try:
 
 		@classmethod
 		def shake(cls, x_offset: int = 3, y_offset: int = 3, fx_time: float = 1):
-			thr = Thread(
+			thread = Thread(
 				target = cls.shake_fx,
 				args   = (x_offset, y_offset, time() + fx_time),
 				name   = 'ShakeFXThread'
 			)
-			thr.start()
+			thread.start()
 
 		@classmethod
 		def shake_widget(cls, x_offset: int = 3, y_offset: int = 3, fx_time: float = 1):
-			thr = Thread(
+			thread = Thread(
 				target = cls.shake_widget_fx,
 				args   = (x_offset, y_offset, time() + fx_time),
 				name   = 'WidgetShakeFXThread'
 			)
-			thr.start()
+			thread.start()
 
 
 	class LevelWidget:
-		def __init__(self, x: int, y: int, level_sprites: list):
-			self.sprites = []
+		def __init__(self, x: int, y: int, level_sprites: list[AbstractImage]):
+			self.sprites: list[Sprite] = []
 			for img in level_sprites:
 				self.sprites.append(Sprite(img, x, y))
-			self.level = settings['shake_level']
+			self.level: int = settings['shake_level']
 
 		def draw(self):
 			self.sprites[self.level].draw()
 
 
 	class Button:
-		def __init__(self, position: IntPoint, size: IntPoint, texture: AbstractImage, on_click = lambda: ..., has_two_states: bool = False, classes: list[str] = []) -> None:
+		def __init__(self, position: IntPoint, size: IntPoint, texture: AbstractImage, on_click: Callable[[], Any] = lambda: ..., has_two_states: bool = False, classes: list[str] = []) -> None:
 			self.pos = position
 			self.size = size
 			self.sprite = Sprite(
@@ -247,13 +448,13 @@ try:
 			if self.has_two_states:
 				self.state = True
 				self.cross = Sprite(
-					img   = disabled_img,
+					img   = AssetsManager.assets.ui.disabled,
 					x     = self.pos.x + self.size.x - 15,
 					y     = -15,
 					batch = ui_batch
 				)
 				self.tick = Sprite(
-					img   = enabled_img,
+					img   = AssetsManager.assets.ui.enabled,
 					x     = self.pos.x + self.size.x - 15,
 					y     = self.pos.y,
 					batch = ui_batch
@@ -272,9 +473,9 @@ try:
 				self.tick.y = -15
 
 		def click(self, x: int, y: int) -> bool:
-			if 'settings' in self.classes and not settings_shown:
+			if 'settings' in self.classes and not Showing.settings:
 				return False
-			if x > self.pos.x and x < self.pos.x + self.size.x and y > self.pos.y and y < self.pos.y + self.size.y and ui_shown:
+			if x > self.pos.x and x < self.pos.x + self.size.x and y > self.pos.y and y < self.pos.y + self.size.y and Showing.ui:
 				self.on_click()
 				if self.has_two_states:
 					self.state = not self.state
@@ -290,13 +491,13 @@ try:
 
 	class Bubble:
 		raw_y = 0
-		size = bubble_img.width
+		size = AssetsManager.assets.sprites.bubble.width
 		tried_to_update = False
 		common = True
 		popped = False
-		sprite = Sprite(bubble_img)
+		sprite = Sprite(AssetsManager.assets.sprites.bubble)
 
-		def __init__(self, x_origin: int, amplitude: float = 150, frequency: float = 0.025, x_shift: int = 0, speed: float = 40, function = sin) -> None:
+		def __init__(self, x_origin: int, amplitude: float = 150, frequency: float = 0.025, x_shift: int = 0, speed: float = 40, function: Callable[[float], float] = sin) -> None:
 			self.start_time = time()
 			self.x_origin = x_origin
 			self.amplitude = amplitude
@@ -316,12 +517,12 @@ try:
 		def update_y(self) -> None:
 			if not self.tried_to_update:
 				if random() <= 0.001:
-					self.sprite = Sprite(weighted_companion_cube_img)
+					self.sprite = Sprite(AssetsManager.assets.sprites.weighted_companion_cube)
 					self.common = False
 				self.tried_to_update = True
 			if not self.common:
 				self.sprite.rotation += 0.1
-			self.raw_y = (time() - self.start_time) * self.speed - bubble_img.width
+			self.raw_y = (time() - self.start_time) * self.speed - AssetsManager.assets.sprites.bubble.width
 
 		def pop(self):
 			self.popped = True
@@ -338,19 +539,9 @@ try:
 	###############
 
 
-	hotkey_provider = Hotkeys.Keyboard
 	cursor_pos = IntPoint(0, 0)
 	selected_track = 0
-	media_player = Player()
-	locales_list = list(locales.keys())
-	show_song_info_until = time()
-	settings_shown = False
-	restore_ui_hint_shown = False
-	restore_ui_hint_already_shown = False
-	ui_shown = True
 	bubbles: list['Bubble'] = []
-	a_old = b_old = x_old = rb_old = False
-	gamepad = GamepadListener()
 
 
 	#################
@@ -358,7 +549,7 @@ try:
 	#################
 
 
-	def media_player_controller():
+	def media_player_controller() -> Generator[Source, None, None]:
 		'''
 		Looped playlist generator.
 		'''
@@ -374,22 +565,43 @@ try:
 				selected_track += 1
 				if selected_track == len(music):
 					selected_track = 0
-			yield music[selected_track]['media']
+			media = music[selected_track].media
+			yield media
 
 	media_player.queue(media_player_controller())
 
 
 	def change_language(just_refresh: bool = False):
 		'''
-		Changes the GUI locale.
+		Changes the GUI locale and font.
 		'''
 		settings['locale'] += 1 - just_refresh
 		if settings['locale'] == len(locales_list):
 			settings['locale'] = 0
 
-		song_hint.text = locales[locales_list[settings["locale"]]]['to_skip'].format(hotkey_provider.SKIP_TRACK)
-		locale_label.text = f'{locales[locales_list[settings["locale"]]]["self_name"]} ({locales[locales_list[settings["locale"]]]["en_name"]})'
-		restore_ui_hint.text = locales[locales_list[settings['locale']]]['restore_ui_hint'].format('+'.join([hotkey_provider.TOGGLE_UI]))
+		if not just_refresh:
+			labels['reloading_required'] = ExtLabel(
+				text = locales[locales_list[settings['locale']]]['reload_is_required'],
+				x         = window.width // 2,
+				y         = window.height - 10,
+				font_size = 25,
+				anchor_x  = 'center',
+				anchor_y  = 'top',
+				batch     = ui_batch
+			)
+
+		labels['locale'].text = f'{locales[locales_list[settings["locale"]]]["self_name"]} ({locales[locales_list[settings["locale"]]]["en_name"]})'
+
+		silly_mode: bool = locales[locales_list[settings['locale']]]['_properties']['silly_mode'] # type: ignore
+
+		for label in labels.values():
+			label.font_name = locales[locales_list[settings['locale']]]['_properties']['font_name']
+			if silly_mode:
+				label.weight = 'normal'
+				label.italic = False
+			else:
+				label.weight = label.default_weight
+				label.italic = label.default_italic
 
 	
 	def open_github():
@@ -403,12 +615,11 @@ try:
 		'''
 		Shows/Hides the settings section.
 		'''
-		global settings_shown
-		settings_shown = not settings_shown
+		Showing.settings = not Showing.settings
 
 		for btn in buttons:
 			if 'main_row' in btn.classes:
-				btn.set_y(130 if settings_shown else 10)
+				btn.set_y(130 if Showing.settings else 10)
 
 
 	def toggle_playback():
@@ -425,24 +636,22 @@ try:
 		'''
 		Controls the HowToBringTheUIBackAfterHidingIt hint label.
 		'''
-		global restore_ui_hint_shown
-		restore_ui_hint_shown = True
+		Showing.restore_ui_hint = True
 		end_time = time() + 10
-		while time() < end_time and not ui_shown:
+		while time() < end_time and not Showing.ui:
 			sleep(0.02)
-		restore_ui_hint_shown = False
+		Showing.restore_ui_hint = False
 
 
 	def toggle_ui():
 		'''
 		Shows/Hides the UI.
 		'''
-		global ui_shown, restore_ui_hint_already_shown
-		ui_shown = not ui_shown
-		if settings_shown:
+		Showing.ui = not Showing.ui
+		if Showing.settings:
 			toggle_settings()
-		if not restore_ui_hint_already_shown:
-			restore_ui_hint_already_shown = True
+		if Showing.Allowed.restore_ui_hint:
+			Showing.Allowed.restore_ui_hint = False
 			thr = Thread(
 				target = restore_ui_hint_controller,
 				args   = (),
@@ -476,64 +685,134 @@ try:
 	####################
 
 
-	song_name = Label(
-		text      = f'{locales[locales_list[settings["locale"]]]["song"]}: {music[0]["name"]}',
-		font_name = 'Arial',
-		font_size = 50,
-		weight    = 'bold',
-		italic    = True,
-		color     = (255, 255, 255, 125),
-		x         = window.width - 10,
-		y         = 55,
-		anchor_x  = 'right'
-	)
-	song_hint = Label(
-		text      = locales[locales_list[settings['locale']]]['to_skip'].format('+'.join(['Ctrl', 'N'])),
-		font_name = 'Arial',
-		font_size = 17,
-		italic    = True,
-		color     = (255, 255, 255, 75),
-		x         = window.width - 10,
-		y         = 20,
-		anchor_x  = 'right'
+	HELP_WINDOW_PADDING = 100
+	HELP_WINDOW_GRID_STEP = 50
+	help_window_grid = grid(IntPoint(0, window.height - round(2 * HELP_WINDOW_PADDING) - 3 * HELP_WINDOW_GRID_STEP), -HELP_WINDOW_GRID_STEP, 'vertical')
+
+
+	help_window_bg = RoundedRectangle(
+		pos    = IntPoint(HELP_WINDOW_PADDING, HELP_WINDOW_PADDING),
+		size   = IntPoint(window.width - 2 * HELP_WINDOW_PADDING, window.height - 2 * HELP_WINDOW_PADDING),
+		radius = 20,
+		color  = (51, 51, 51),
+		batch  = gamepad_ctrls_batch
 	)
 
-	locale_label = Label(
-		text      = f'{locales[locales_list[settings["locale"]]]["self_name"]} ({locales[locales_list[settings["locale"]]]["en_name"]})',
-		font_name = 'Arial',
-		font_size = 20,
-		color     = (255, 255, 255, 100),
-		x         = 70,
-		y         = 95,
-		anchor_y  = 'center',
-		batch     = settings_batch
-	)
 
-	restore_ui_hint = Label(
-		text      = locales[locales_list[settings['locale']]]['restore_ui_hint'].format('+'.join(['F1'])),
-		font_name = 'Arial',
-		font_size = 20,
-		italic    = True,
-		color     = (255, 255, 255, 75),
-		x         = 10,
-		y         = window.height - 10,
-		anchor_y  = 'top',
-	)
+	labels = {
+		'song_name': ExtLabel(
+			text      = f'...', # type: ignore
+			font_size = 50,
+			weight    = 'bold',
+			italic    = True,
+			color     = (255, 255, 255, 125),
+			x         = window.width - 30,
+			y         = 120,
+			anchor_x  = 'right'
+		),
+		'song_artist': ExtLabel(
+			text      = f'от ...', # type: ignore
+			font_size = 35,
+			italic    = True,
+			color     = (255, 255, 255, 125),
+			x         = window.width - 30,
+			y         = 110,
+			anchor_x  = 'right',
+			anchor_y  = 'top'
+		),
+		'song_hint': ExtLabel(
+			text      = locales[locales_list[settings['locale']]]['to_skip'].format(locales[locales_list[settings['locale']]][Controls.provider.SKIP_TRACK]), # type: ignore
+			font_size = 17,
+			italic    = True,
+			color     = (255, 255, 255, 75),
+			x         = window.width - 30,
+			y         = 20,
+			anchor_x  = 'right'
+		),
+
+		'locale': ExtLabel(
+			text      = f'{locales[locales_list[settings["locale"]]]["self_name"]} ({locales[locales_list[settings["locale"]]]["en_name"]})',
+			font_size = 20,
+			color     = (255, 255, 255, 102),
+			x         = 70,
+			y         = 95,
+			anchor_y  = 'center',
+			batch     = settings_batch
+		),
+
+		'restore_ui_hint': ExtLabel(
+			text      = locales[locales_list[settings['locale']]]['restore_ui_hint'].format(locales[locales_list[settings['locale']]][Controls.provider.TOGGLE_UI]), # type: ignore
+			font_size = 20,
+			italic    = True,
+			color     = (255, 255, 255, 102),
+			x         = 10,
+			y         = window.height - 10,
+			anchor_x  = 'left',
+			anchor_y  = 'top'
+		),
+
+		'gmp_hint_title': ExtLabel(
+			text      = locales[locales_list[settings['locale']]]['gmp_hint_title'],
+			font_size = 35,
+			weight    = 'bold',
+			color     = (255, 255, 255, 255),
+			x         = window.width // 2,
+			y         = window.height - round(1.5 * HELP_WINDOW_PADDING),
+			anchor_x  = 'center',
+			anchor_y  = 'top',
+			batch     =	gamepad_ctrls_batch
+		)
+	}
+
+	for data in (
+		('gmp_hint_open_this_window',  Controls.Gamepad.HELP_WINDOW),
+		('gmp_hint_move_the_mouse',    Controls.Gamepad.MOUSE_MOVE),
+		('gmp_hint_lmb',               Controls.Gamepad.MOUSE_PRESS),
+		('gmp_hint_pause',             Controls.Gamepad.PAUSE_MUSIC),
+		('gmp_hint_hide_ui',           Controls.Gamepad.TOGGLE_UI),
+		('gmp_hint_skip_track',        Controls.Gamepad.SKIP_TRACK),
+		('gmp_hint_shuffling',         Controls.Gamepad.TOGGLE_SHUFFLE)
+	):
+		labels[data[0]] = ExtLabel(
+			text      = locales[locales_list[settings['locale']]][data[0]].format(locales[locales_list[settings['locale']]][data[1]]),
+			font_size = 25,
+			color     = (255, 255, 255, 255),
+			x         = window.width // 2,
+			y         = next(help_window_grid).y,
+			anchor_x  = 'center',
+			anchor_y  = 'top',
+			batch     =	gamepad_ctrls_batch
+		)
+
+	labels['gmp_hint_close_this_window'] = ExtLabel(
+			text      = locales[locales_list[settings['locale']]]['gmp_hint_close_this_window'].format(locales[locales_list[settings['locale']]][Controls.Gamepad.CLOSE_HELP]),
+			font_size = 35,
+			weight    = 'bold',
+			color     = (255, 255, 255, 255),
+			x         = window.width // 2,
+			y         = next(help_window_grid).y - 3 * HELP_WINDOW_GRID_STEP,
+			anchor_x  = 'center',
+			anchor_y  = 'top',
+			batch     =	gamepad_ctrls_batch
+		)
+	
+	# Changing the font right away
+	change_language(just_refresh = True)
 
 
 	buttons = [
-		Button(IntPoint( 10, 10), IntPoint( 50, 50), github_img,     open_github,        False, ['main_row']),
-		Button(IntPoint( 70, 10), IntPoint( 50, 50), settings_img,   toggle_settings,    False, ['main_row']),
-		Button(IntPoint(130, 10), IntPoint( 50, 50), shuffle_img,    toggle_shuffle,     True,  ['main_row']),
-		Button(IntPoint(190, 10), IntPoint( 50, 50), play_pause_img, toggle_playback,    False, ['main_row']),
+		Button(IntPoint( 10, 10), IntPoint( 50, 50), AssetsManager.assets.ui.github,     open_github,        False, ['main_row']),
+		Button(IntPoint( 70, 10), IntPoint( 50, 50), AssetsManager.assets.ui.settings,   toggle_settings,    False, ['main_row']),
+		Button(IntPoint(130, 10), IntPoint( 50, 50), AssetsManager.assets.ui.shuffle,    toggle_shuffle,     True,  ['main_row']),
+		Button(IntPoint(190, 10), IntPoint( 50, 50), AssetsManager.assets.ui.play_pause, toggle_playback,    False, ['main_row']),
 
-		Button(IntPoint( 10, 70), IntPoint( 50, 50), globe_img,      change_language,    False, ['settings']),
-		Button(IntPoint( 10, 10), IntPoint(110, 50), pulse_img,      change_shake_level, False, ['settings']),
+		Button(IntPoint( 10, 70), IntPoint( 50, 50), AssetsManager.assets.ui.globe,      change_language,    False, ['settings']),
+		Button(IntPoint( 10, 10), IntPoint(110, 50), AssetsManager.assets.ui.pulse,      change_shake_level, False, ['settings']),
 
-		Button(IntPoint(10, window.height - 60), IntPoint(50, 50), hide_img, toggle_ui, False, []),
+		Button(IntPoint(10, window.height - 60), IntPoint(50, 50), AssetsManager.assets.ui.hide, toggle_ui, False, []),
 
-		Button(IntPoint(window.width - 90, window.height - 40), IntPoint(30, 30), minimize_img, window.minimize, False, ['window_controls']),
-		Button(IntPoint(window.width - 40, window.height - 40), IntPoint(30, 30), cross_img, close_app, False, ['window_controls']),
+		Button(IntPoint(window.width - 90, window.height - 40), IntPoint(30, 30), AssetsManager.assets.ui.minimize, window.minimize, False, ['window_controls']),
+		Button(IntPoint(window.width - 40, window.height - 40), IntPoint(30, 30), AssetsManager.assets.ui.cross, close_app, False, ['window_controls']),
 	]
 
 
@@ -543,16 +822,12 @@ try:
 		buttons[2].tick.y = -15
 
 
-	def update(*args) -> None:
-		...
-
-
 	#######################
 	##  EVENTS HANDLERS  ##
 	#######################
 
 
-	def emulated_mouse_press(x, y, button, modifiers) -> None:
+	def emulated_mouse_press(x: int, y: int, *args: int) -> None:
 		global bubbles
 
 		for btn in buttons:
@@ -566,17 +841,15 @@ try:
 					bubbles.pop(i)
 					return None
 			else:
-				if x > obj.x - (weighted_companion_cube_img.width // 2) and x < obj.x - (weighted_companion_cube_img.width // 2) + obj.size and y > obj.y - (weighted_companion_cube_img.width // 2) and y < obj.y - (weighted_companion_cube_img.width // 2) + obj.size:
+				if x > obj.x - (AssetsManager.assets.sprites.weighted_companion_cube.width // 2) and x < obj.x - (AssetsManager.assets.sprites.weighted_companion_cube.width // 2) + obj.size and y > obj.y - (AssetsManager.assets.sprites.weighted_companion_cube.width // 2) and y < obj.y - (AssetsManager.assets.sprites.weighted_companion_cube.width // 2) + obj.size:
 					obj.pop()
 					bubbles.pop(i)
 					return None
 				
 
-	def gamepad_handler(*args) -> None:
-		global hotkey_provider, a_old, b_old, x_old, rb_old
-
-		if gamepad.registered and hotkey_provider != Hotkeys.Gamepad:
-			hotkey_provider = Hotkeys.Gamepad
+	def gamepad_handler(*args: int) -> None:
+		if gamepad.registered and Controls.provider != Controls.Gamepad: # type: ignore
+			Controls.provider = Controls.Gamepad # type: ignore
 			change_language(just_refresh = True)
 
 		window.set_mouse_position(
@@ -584,32 +857,36 @@ try:
 			int(cursor_pos.y + 1 - gamepad.stick.left.y * settings['gamepad']['mouse_sensitivity'])
 		)
 
-		if (gamepad.key.a or gamepad.trigger.right.value > 0.5) and not a_old: emulated_mouse_press(cursor_pos.x, cursor_pos.y, -1, -1)
-		if gamepad.key.b and not b_old: toggle_playback()
-		if gamepad.key.x and not x_old: toggle_ui()
-		if gamepad.bumper.right and not rb_old: media_player.next_source()
+		if gamepad.key.start and gamepad.key.b: window.on_close()
+		if gamepad.key.start and not OldGamepadStates.start: Showing.gamepad_ctrls_hint = not Showing.gamepad_ctrls_hint
+		if (gamepad.key.a or gamepad.trigger.right.value > 0.5) and not OldGamepadStates.a: emulated_mouse_press(cursor_pos.x, cursor_pos.y, -1, -1)
+		if gamepad.key.b and not OldGamepadStates.b: toggle_playback()
+		if gamepad.key.x and not OldGamepadStates.x: toggle_ui()
+		if gamepad.bumper.right and not OldGamepadStates.rb: media_player.next_source()
 
-		a_old  = bool(gamepad.key.a) or gamepad.trigger.right.value > 0.5
-		b_old  = bool(gamepad.key.b)
-		x_old  = bool(gamepad.key.x)
-		rb_old = bool(gamepad.bumper.right)
+		OldGamepadStates.start = bool(gamepad.key.start)
+		OldGamepadStates.mode  = bool(gamepad.key.mode)
+		OldGamepadStates.rb    = bool(gamepad.bumper.right)
+		OldGamepadStates.a     = bool(gamepad.key.a) or gamepad.trigger.right.value > 0.5
+		OldGamepadStates.b     = bool(gamepad.key.b)
+		OldGamepadStates.x     = bool(gamepad.key.x)
 
 
-	@media_player.event
+	@media_player.event # type: ignore
 	def on_player_next_source():
-		global show_song_info_until
-		song_name.text = f'{locales[locales_list[settings["locale"]]]["song"]}: {music[selected_track]["name"]}'
-		show_song_info_until = time() + 5
+		labels['song_name'].text = locales[locales_list[settings["locale"]]]["quotes"][0] + music[selected_track].title + locales[locales_list[settings["locale"]]]["quotes"][1]
+		labels['song_artist'].text = locales[locales_list[settings["locale"]]]["by_artist"].format(music[selected_track].artist)
+		Showing.song_info_until = time() + 5
 
 	shake_level_widget = LevelWidget(70, 20, [
-		level0_img,
-		level1_img,
-		level2_img,
-		level3_img
+		AssetsManager.assets.ui.level_off,
+		AssetsManager.assets.ui.level_low,
+		AssetsManager.assets.ui.level_medium,
+		AssetsManager.assets.ui.level_high
 	])
 
 
-	@window.event
+	@window.event # type: ignore
 	def on_draw():
 		global bubbles
 
@@ -623,56 +900,56 @@ try:
 				new_bubbles.insert(0, bubble)
 		bubbles = new_bubbles
 
-		if restore_ui_hint_shown:
-			restore_ui_hint.draw()
+		if Showing.restore_ui_hint:
+			labels['restore_ui_hint'].draw()
 
 		# Draw the UI if it is not hidden
-		if ui_shown:
+		if Showing.ui:
 			ui_batch.draw()
 
-		# Draw gamepad hints if required
-		# TODO: freaking hints
-		if gamepad.registered:
-			gamepad_ctrls_batch.draw()
-
 		# Draw the settings if they are not hidden
-		if settings_shown:
+		if Showing.settings:
 			settings_batch.draw()
 			shake_level_widget.draw()
 
+		# Draw gamepad hints if required
+		if Showing.gamepad_ctrls_hint:
+			gamepad_ctrls_batch.draw()
+
 		# Draw song info if it should be displayed at the moment
-		if show_song_info_until >= time():
-			song_name.draw()
-			song_hint.draw()
+		if Showing.song_info_until >= time():
+			labels['song_name'].draw()
+			labels['song_artist'].draw()
+			labels['song_hint'].draw()
 
 		# Draw the cursor
 		cursor.draw()
 
 
-	@window.event
-	def on_mouse_press(x, y, button, modifiers):
+	@window.event # type: ignore
+	def on_mouse_press(x: int, y: int, button: int, modifiers: int):
 		emulated_mouse_press(x, y, button, modifiers)
 
 
-	@window.event
-	def on_mouse_motion(x, y, dx, dy):
+	@window.event # type: ignore
+	def on_mouse_motion(x: int, y: int, dx: int, dy: int):
 		cursor_pos.x = x
 		cursor_pos.y = y
 		cursor.x = x
 		cursor.y = y - 20
 
 
-	@window.event
-	def on_mouse_drag(x, y, dx, dy, buttons, modifiers):
+	@window.event # type: ignore
+	def on_mouse_drag(x: int, y: int, dx: int, dy: int, buttons: int, modifiers: int):
 		on_mouse_motion(x, y, dx, dy)
 
 
-	@window.event
-	def on_key_press(symbol, modifiers):
+	@window.event # type: ignore
+	def on_key_press(symbol: int, modifiers: int):
 		match symbol:
 
 			case key.ESCAPE:
-				if settings_shown:
+				if Showing.settings:
 					toggle_settings()
 				return EVENT_HANDLED
 
@@ -692,9 +969,12 @@ try:
 			case key.SPACE:
 				toggle_playback()
 				return EVENT_HANDLED
+			
+			case _:
+				return EVENT_UNHANDLED
 
 
-	@window.event
+	@window.event # type: ignore
 	def on_close():
 		Console.log('got window closing intent', 'IntentHandler', 'I')
 		Console.log('saving settings', 'IntentHandler', 'I')
@@ -720,7 +1000,7 @@ try:
 			delay = randint(1, 3)
 			sleep(delay)
 			bubbles.insert(0, Bubble(
-				x_origin  = randint(0, window.width - bubble_img.width),
+				x_origin  = randint(0, window.width - AssetsManager.assets.sprites.bubble.width),
 				speed     = randint(30, 60),
 				frequency = randint(15, 25) / 1000,
 				x_shift   = int(random() * 2 - 1)
@@ -740,7 +1020,6 @@ try:
 	gamepad.start()
 
 	schedule_interval(gamepad_handler, 0.01)
-	schedule_interval(update, 1/60)
 
 	spawner_thread.start()
 
