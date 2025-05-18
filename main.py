@@ -9,12 +9,14 @@ try:
 	from pyglet.window   import key, Window
 	from pyglet.sprite   import Sprite
 	from pyglet.image    import load as load_image
+	from pyglet.clock    import schedule_interval
 	from pyglet.event    import EVENT_HANDLED
 	from pyglet.media    import Player
 	from pyglet.text     import Label
 	from pyglet.app      import event_loop, run
 
 	from lib.settingsmgr import settings, save_settings
+	from lib.pligamepad  import GamepadListener
 	from lib.minilogger  import Console
 
 	from webbrowser import open as open_url
@@ -26,7 +28,17 @@ try:
 	from math       import sin
 	from os         import listdir
 
-	class Empty: ...
+
+	class Hotkeys:
+		class Keyboard:
+			TOGGLE_UI  = 'F1'
+			SKIP_TRACK = 'Ctrl+N'
+		class Gamepad:
+			TOGGLE_UI  = 'X'
+			SKIP_TRACK = 'RB'
+
+	hotkey_provider = Hotkeys.Keyboard
+
 
 	# Initializing the window
 	try:
@@ -35,7 +47,7 @@ try:
 			fullscreen = True,
 			screen     = screen[0],
 			caption    = 'Bubbles and Chillout'
-			)
+		)
 	except:
 
 		with open('traceback.txt', 'w') as exception_file:
@@ -47,6 +59,11 @@ try:
 		exit(-1)
 
 	window.set_mouse_visible(False)
+
+
+	cursor_pos = SimpleNamespace()
+	cursor_pos.x = 0
+	cursor_pos.y = 1
 
 
 	# Loading localization strings
@@ -82,8 +99,9 @@ try:
 	cursor = Sprite(cursor_img)
 
 	# Creating drawing batches
-	settings_batch = Batch()
-	ui_batch       = Batch()
+	settings_batch      = Batch()
+	ui_batch            = Batch()
+	gamepad_ctrls_batch = Batch()
 
 	# Loading music
 	with open('resources/data/music_meta.json', 'r') as file: music_meta = load(file)
@@ -119,15 +137,14 @@ try:
 	media_player.queue(media_player_controller())
 
 	locales_list = list(locales.keys())
-	def change_language():
-		settings['locale'] += 1
+	def change_language(just_refresh: bool = False):
+		settings['locale'] += 1 - just_refresh
 		if settings['locale'] == len(locales_list):
 			settings['locale'] = 0
 
-		song_name.text = f'{locales[locales_list[settings["locale"]]]["song"]}: {music[0]["name"]}'
-		song_hint.text = locales[locales_list[settings["locale"]]]['to_skip'].format('+'.join(['Ctrl', 'N']))
+		song_hint.text = locales[locales_list[settings["locale"]]]['to_skip'].format(hotkey_provider.SKIP_TRACK)
 		locale_label.text = f'{locales[locales_list[settings["locale"]]]["self_name"]} ({locales[locales_list[settings["locale"]]]["en_name"]})'
-		restore_ui_hint.text = locales[locales_list[settings['locale']]]['restore_ui_hint'].format('+'.join(['F1']))
+		restore_ui_hint.text = locales[locales_list[settings['locale']]]['restore_ui_hint'].format('+'.join([hotkey_provider.TOGGLE_UI]))
 
 	# Pop-up with the track name
 	song_name = Label(
@@ -470,11 +487,11 @@ try:
 		window.clear()
 
 		# Updating bubbles' position and draw that are in the visible area
+		# TODO: bring the position update calls outside of this function
 		for i in range(len(bubbles) - 1, -1, -1):
 			bubbles[i].update_y()
 			if bubbles[i].y < window.height + bubbles[i].size:
 				bubbles[i].draw()
-				#pyglet.shapes.Line(0, 0, bubbles[i].x, bubbles[i].y, 2, (255, 0, 0)).draw()
 
 		if restore_ui_hint_shown:
 			restore_ui_hint.draw()
@@ -482,6 +499,11 @@ try:
 		# Draw the UI if it is not hidden
 		if ui_shown:
 			ui_batch.draw()
+
+		# Draw gamepad hints if required
+		# TODO: freaking hints
+		if gamepad.registered:
+			gamepad_ctrls_batch.draw()
 
 		# Draw the settings if they are not hidden
 		if settings_shown:
@@ -496,9 +518,7 @@ try:
 		# Draw the cursor
 		cursor.draw()
 
-	# Handler for the mouse button press event
-	@window.event
-	def on_mouse_press(x, y, button, modifiers):
+	def emulated_mouse_press(x, y, button, modifiers) -> None:
 		global bubbles
 
 		for btn in buttons:
@@ -517,9 +537,16 @@ try:
 					bubbles.pop(i)
 					return None
 
+	# Handler for the mouse button press event
+	@window.event
+	def on_mouse_press(x, y, button, modifiers):
+		emulated_mouse_press(x, y, button, modifiers)
+
 	# Handler for the mouse button motion event
 	@window.event
 	def on_mouse_motion(x, y, dx, dy):
+		cursor_pos.x = x
+		cursor_pos.y = y
 		cursor.x = x
 		cursor.y = y - 20
 
@@ -557,14 +584,16 @@ try:
 
 	@window.event
 	def on_close():
-		Console.log('window was closed', 'IntentHandler', 'I')
+		Console.log('got window closing intent', 'IntentHandler', 'I')
 		Console.log('saving settings', 'IntentHandler', 'I')
 		save_settings()
+		Console.log('stopping gamepad listener', 'IntentHandler', 'I')
+		gamepad.stop()
 		Console.log('exitting', 'IntentHandler', 'I')
 
 	# A function that creates random bubbles with a random delay. Blocking.
 	def spawner():
-		Console.log('hello', 'Spawner', 'I')
+		Console.log('hello', 'Spawner', 'D')
 		if not event_loop.is_running:
 			while not event_loop.is_running:
 				Console.log('waiting until event_loop runs', 'Spawner', 'I')
@@ -595,7 +624,35 @@ try:
 	media_player.play()
 	on_player_next_source()
 
-	# Starting the Pyglet app
+	# Initializing gamepad listener
+	gamepad = GamepadListener()
+	gamepad.start()
+
+	a_old = b_old = x_old = rb_old = False
+	def gamepad_handler(*args) -> None:
+		global hotkey_provider, a_old, b_old, x_old, rb_old
+
+		if gamepad.registered and hotkey_provider != Hotkeys.Gamepad:
+			hotkey_provider = Hotkeys.Gamepad
+			change_language(just_refresh = True)
+
+		window.set_mouse_position(
+			int(cursor_pos.x + gamepad.stick.left.x * settings['gamepad']['mouse_sensitivity']),
+			int(cursor_pos.y + 1 - gamepad.stick.left.y * settings['gamepad']['mouse_sensitivity'])
+		)
+
+		if (gamepad.key.a or gamepad.trigger.right.value > 0.5) and not a_old: emulated_mouse_press(cursor_pos.x, cursor_pos.y, -1, -1)
+		if gamepad.key.b and not b_old: toggle_playback()
+		if gamepad.key.x and not x_old: toggle_ui()
+		if gamepad.bumper.right and not rb_old: media_player.next_source()
+
+		a_old  = bool(gamepad.key.a) or gamepad.trigger.right.value > 0.5
+		b_old  = bool(gamepad.key.b)
+		x_old  = bool(gamepad.key.x)
+		rb_old = bool(gamepad.bumper.right)
+
+	# Starting everything up
+	schedule_interval(gamepad_handler, 0.01)
 	run()
 
 	# Waiting for event_loop to stop, then delete media_player
