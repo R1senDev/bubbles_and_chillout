@@ -8,7 +8,7 @@ try:
 	from pyglet.display  import get_display
 	from pyglet.window   import key, Window
 	from pyglet.sprite   import Sprite
-	from pyglet.image    import load as load_image
+	from pyglet.image    import load as pgl_load_image, AbstractImage
 	from pyglet.clock    import schedule_interval
 	from pyglet.event    import EVENT_HANDLED
 	from pyglet.media    import Player
@@ -27,6 +27,11 @@ try:
 	from json       import load
 	from math       import sin
 	from os         import listdir
+
+
+	def load_image(path: str) -> AbstractImage:
+		Console.log(f'loading image asset: {path}', 'Loader')
+		return pgl_load_image(path)
 
 
 	class Hotkeys:
@@ -602,14 +607,12 @@ try:
 		while event_loop.is_running:
 			delay = randint(1, 3)
 			sleep(delay)
-			bubbles.reverse()
-			bubbles.append(Bubble(
+			bubbles.insert(0, Bubble(
 				x_origin  = randint(0, window.width - bubble_img.width),
 				speed     = randint(30, 60),
 				frequency = randint(15, 25) / 1000,
 				x_shift   = int(random() * 2 - 1)
 			))
-			bubbles.reverse()
 		Console.log('event_loop is inactive; ending', 'Spawner', 'I')
 
 	# Starting the spawner thread
